@@ -15,8 +15,13 @@ export function middleware(request: NextRequest) {
 
   if (!session) {
     const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("next", pathname);
+    if (pathname !== "/") loginUrl.searchParams.set("next", pathname);
     return NextResponse.redirect(loginUrl);
+  }
+
+  // Authenticated root → dashboard
+  if (pathname === "/") {
+    return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
   const headers = new Headers(request.headers);
