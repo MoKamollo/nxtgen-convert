@@ -6,11 +6,11 @@ import { eq, count, sum, desc } from "drizzle-orm";
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const orgId = searchParams.get("organizationId");
+    const orgId = request.headers.get("x-tenant-id");
     const type = searchParams.get("type") || "overview";
 
     if (!orgId) {
-      return NextResponse.json({ error: "organizationId required" }, { status: 400 });
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
     if (type === "overview") {

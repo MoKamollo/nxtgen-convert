@@ -5,8 +5,7 @@ import { eq, desc } from "drizzle-orm";
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const orgId = searchParams.get("organizationId");
+    const orgId = request.headers.get("x-tenant-id");
     const results = orgId
       ? await db.select().from(tasks).where(eq(tasks.organizationId, orgId)).orderBy(desc(tasks.createdAt)).limit(100)
       : await db.select().from(tasks).orderBy(desc(tasks.createdAt)).limit(100);
