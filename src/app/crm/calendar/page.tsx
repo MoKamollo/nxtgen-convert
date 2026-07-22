@@ -3,7 +3,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 import { apiUrl } from "@/lib/org";
-import { Plus, ChevronLeft, ChevronRight, Calendar, Video, Phone, Mail, MessageSquare, Loader2, CheckSquare } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, Calendar, Video, Phone, Mail, MessageSquare, Loader2, CheckSquare, X } from "lucide-react";
 import { useState, useEffect } from "react";
 
 const DAYS   = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
@@ -14,6 +14,8 @@ type CalEvent = {
   date: Date; time: string; source: "activity" | "task";
   color: string;
 };
+
+type CalContact = { id: string; firstName: string; lastName: string | null };
 
 const TYPE_CONFIG: Record<string, { color: string; icon: typeof Mail }> = {
   meeting:   { color: "bg-violet-500/20 border-violet-500/30 text-violet-300",  icon: Calendar },
@@ -26,13 +28,22 @@ const TYPE_CONFIG: Record<string, { color: string; icon: typeof Mail }> = {
   note:      { color: "bg-surface-700/40 border-surface-700 text-surface-400",  icon: Calendar },
 };
 
-export default function CalendarPage() {
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [viewMode,    setViewMode]    = useState<"month" | "week">("month");
-  const [events,      setEvents]      = useState<CalEvent[]>([]);
-  const [loading,     setLoading]     = useState(true);
+const today = new Date();
+const todayStr = today.toISOString().split("T")[0];
+const nowTime  = today.toTimeString().slice(0,5);
 
-  const today = new Date();
+export default function CalendarPage() {
+  const [currentDate,   setCurrentDate]   = useState(new Date());
+  const [viewMode,      setViewMode]      = useState<"month" | "week">("month");
+  const [events,        setEvents]        = useState<CalEvent[]>([]);
+  const [loading,       setLoading]       = useState(true);
+  const [calContacts,   setCalContacts]   = useState<CalContact[]>([]);
+  const [showNewEvent,  setShowNewEvent]  = useState(false);
+  const [saving,        setSaving]        = useState(false);
+  const [eventForm,     setEventForm]     = useState({
+    title: "", type: "meeting", date: todayStr, time: nowTime, contactId: "", notes: "",
+  });
+
   const year  = currentDate.getFullYear();
   const month = currentDate.getMonth();
 
@@ -40,12 +51,13 @@ export default function CalendarPage() {
     Promise.all([
       fetch(apiUrl("/api/activities")).then(r => r.json()),
       fetch(apiUrl("/api/tasks")).then(r => r.json()),
-    ]).then(([actsRes, tasksRes]) => {
+      fetch(apiUrl("/api/contacts")).then(r => r.json()),
+    ]).then(([actsRes, tasksRes, contsRes]) => {
       const acts: CalEvent[] = (actsRes.data ?? [])
         .filter((a: { scheduledAt?: string | null }) => a.scheduledAt)
         .map((a: { id: string; subject: string; type: string; scheduledAt: string }) => {
-          const d    = new Date(a.scheduledAt);
-          const cfg  = TYPE_CONFIG[a.type] ?? TYPE_CONFIG.note;
+          const d   = new Date(a.scheduledAt);
+          const cfg = TYPE_CONFIG[a.type] ?? TYPE_CONFIG.note;
           return {
             id:     `act-${a.id}`,
             title:  a.subject,
@@ -73,9 +85,46 @@ export default function CalendarPage() {
         });
 
       setEvents([...acts, ...tks].sort((a, b) => a.date.getTime() - b.date.getTime()));
+      setCalContacts(contsRes.data ?? []);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
+
+  async function handleCreateEvent(e: React.FormEvent) {
+    e.preventDefault();
+    if (!eventForm.title.trim()) return;
+    setSaving(true);
+
+    const scheduledAt = `${eventForm.date}T${eventForm.time}:00`;
+    const res = await fetch(apiUrl("/api/activities"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: eventForm.type,
+        subject: eventForm.title.trim(),
+        body: eventForm.notes || null,
+        contactId: eventForm.contactId || null,
+        scheduledAt,
+      }),
+    });
+
+    if (res.ok) {
+      const d = new Date(scheduledAt);
+      const cfg = TYPE_CONFIG[eventForm.type] ?? TYPE_CONFIG.note;
+      const newEvent: CalEvent = {
+        id:     `act-${Date.now()}`,
+        title:  eventForm.title.trim(),
+        type:   eventForm.type,
+        date:   d,
+        time:   d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+        source: "activity",
+        color:  cfg.color,
+      };
+      setEvents(prev => [...prev, newEvent].sort((a, b) => a.date.getTime() - b.date.getTime()));
+      setShowNewEvent(false);
+      setEventForm({ title: "", type: "meeting", date: todayStr, time: nowTime, contactId: "", notes: "" });
+    }
+    setSaving(false);
+  }
 
   const firstDay    = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -115,7 +164,7 @@ export default function CalendarPage() {
                 className="h-7 px-3 rounded-lg border border-surface-700 text-xs text-surface-400 hover:text-surface-200 hover:border-surface-600 transition-all">
                 Today
               </button>
-              <Button variant="gradient" size="sm" icon={Plus}>New Event</Button>
+              <Button variant="gradient" size="sm" icon={Plus} onClick={() => setShowNewEvent(true)}>New Event</Button>
             </div>
           </div>
 
@@ -139,7 +188,12 @@ export default function CalendarPage() {
                   const isToday  = date.toDateString() === today.toDateString();
                   const dayEvts  = events.filter(e => e.date.toDateString() === date.toDateString());
                   return (
-                    <div key={day} className={cn("border-r border-b border-surface-800/40 p-1.5 cursor-pointer hover:bg-surface-800/30 transition-colors", isToday && "bg-brand-500/5")}>
+                    <div key={day}
+                      onClick={() => {
+                        setEventForm(f => ({ ...f, date: `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}` }));
+                        setShowNewEvent(true);
+                      }}
+                      className={cn("border-r border-b border-surface-800/40 p-1.5 cursor-pointer hover:bg-surface-800/30 transition-colors", isToday && "bg-brand-500/5")}>
                       <div className={cn("flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium mb-1", isToday ? "bg-brand-500 text-white font-bold" : "text-surface-400")}>
                         {day}
                       </div>
@@ -216,6 +270,89 @@ export default function CalendarPage() {
           </div>
         </div>
       </div>
+
+      {/* New Event Modal */}
+      {showNewEvent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-surface-700 bg-surface-900 shadow-2xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-surface-800">
+              <h3 className="text-sm font-bold text-surface-50">New Event</h3>
+              <button onClick={() => setShowNewEvent(false)} className="text-surface-500 hover:text-surface-300 transition-colors">
+                <X size={16} />
+              </button>
+            </div>
+            <form onSubmit={handleCreateEvent} className="p-5 space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-surface-400 block mb-1.5">Title *</label>
+                <input required value={eventForm.title} onChange={e => setEventForm(f => ({ ...f, title: e.target.value }))}
+                  placeholder="e.g. Discovery call with Acme"
+                  className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 placeholder:text-surface-600 focus:outline-none focus:border-brand-500" />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-surface-400 block mb-1.5">Type</label>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { value: "meeting", label: "Meeting", icon: Calendar },
+                    { value: "call",    label: "Call",    icon: Phone },
+                    { value: "email",   label: "Email",   icon: Mail },
+                    { value: "video",   label: "Video",   icon: Video },
+                  ].map(({ value, label, icon: Icon }) => (
+                    <button key={value} type="button" onClick={() => setEventForm(f => ({ ...f, type: value }))}
+                      className={cn("flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold border transition-all",
+                        eventForm.type === value ? "border-brand-500 bg-brand-500/20 text-brand-300" : "border-surface-700 text-surface-400 hover:border-surface-600")}>
+                      <Icon size={12} />{label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-surface-400 block mb-1.5">Date *</label>
+                  <input type="date" required value={eventForm.date} onChange={e => setEventForm(f => ({ ...f, date: e.target.value }))}
+                    className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 focus:outline-none focus:border-brand-500" />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-surface-400 block mb-1.5">Time</label>
+                  <input type="time" value={eventForm.time} onChange={e => setEventForm(f => ({ ...f, time: e.target.value }))}
+                    className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 focus:outline-none focus:border-brand-500" />
+                </div>
+              </div>
+
+              {calContacts.length > 0 && (
+                <div>
+                  <label className="text-xs font-semibold text-surface-400 block mb-1.5">Contact (optional)</label>
+                  <select value={eventForm.contactId} onChange={e => setEventForm(f => ({ ...f, contactId: e.target.value }))}
+                    className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 focus:outline-none focus:border-brand-500">
+                    <option value="">No contact</option>
+                    {calContacts.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.firstName}{c.lastName ? " " + c.lastName : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label className="text-xs font-semibold text-surface-400 block mb-1.5">Notes (optional)</label>
+                <textarea value={eventForm.notes} onChange={e => setEventForm(f => ({ ...f, notes: e.target.value }))}
+                  placeholder="Agenda, links, prep notes…"
+                  rows={2}
+                  className="w-full rounded-lg border border-surface-700 bg-surface-800 px-3 py-2 text-sm text-surface-100 placeholder:text-surface-600 focus:outline-none focus:border-brand-500 resize-none" />
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <Button type="submit" variant="gradient" loading={saving} className="flex-1">
+                  Schedule Event
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setShowNewEvent(false)}>Cancel</Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </AppLayout>
   );
 }

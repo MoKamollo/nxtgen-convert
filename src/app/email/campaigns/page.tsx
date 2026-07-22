@@ -48,6 +48,7 @@ export default function CampaignsPage() {
   const [allCampaigns, setAllCampaigns] = useState<Campaign[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [launching, setLaunching] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", type: "email", subject: "", fromName: "", fromEmail: "" });
 
   const load = useCallback(() => {
@@ -77,6 +78,19 @@ export default function CampaignsPage() {
     setShowModal(false);
     setForm({ name: "", type: "email", subject: "", fromName: "", fromEmail: "" });
     load();
+  };
+
+  const handleLaunch = async (campaignId: string) => {
+    if (!confirm("Send this campaign to all contacts with email addresses?")) return;
+    setLaunching(campaignId);
+    const res = await fetch(apiUrl(`/api/campaigns/${campaignId}/send`), { method: "POST" });
+    const j = await res.json();
+    setLaunching(null);
+    if (res.ok) {
+      load();
+    } else {
+      alert(j.error ?? "Failed to send campaign");
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -277,8 +291,12 @@ export default function CampaignsPage() {
                   {/* Actions */}
                   <div className="flex items-center gap-1.5 ml-2 relative">
                     {campaign.status === "draft" && (
-                      <Button variant="outline" size="sm" icon={Play}>
-                        Launch
+                      <Button
+                        variant="outline" size="sm"
+                        icon={launching === campaign.id ? undefined : Play}
+                        loading={launching === campaign.id}
+                        onClick={e => { e.stopPropagation(); handleLaunch(campaign.id); }}>
+                        {launching === campaign.id ? "Sending…" : "Launch"}
                       </Button>
                     )}
                     {campaign.status === "sending" && (

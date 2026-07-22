@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { contacts, companies, users } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
+import { triggerAutomation } from "@/lib/automation";
 
 export async function GET(request: NextRequest) {
   try {
@@ -73,6 +74,7 @@ export async function POST(request: NextRequest) {
       tags: body.tags || [],
       customFields: body.customFields || {},
     }).returning();
+    await triggerAutomation(orgId, "contact.created", { contactId: contact.id });
     return NextResponse.json({ data: contact }, { status: 201 });
   } catch (error) {
     console.error(error);

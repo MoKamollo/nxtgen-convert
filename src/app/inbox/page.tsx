@@ -42,6 +42,7 @@ export default function InboxPage() {
   const [selected,     setSelected]     = useState<Conversation | null>(null);
   const [reply,        setReply]        = useState("");
   const [sending,      setSending]      = useState(false);
+  const [sendMode,     setSendMode]     = useState<"log" | "email">("log");
 
   const load = useCallback(() => {
     setLoading(true);
@@ -94,6 +95,7 @@ export default function InboxPage() {
         subject: `Re: ${selected.lastActivity.subject}`,
         body: reply.trim(),
         contactId: selected.contactId,
+        sendEmail: sendMode === "email",
       }),
     });
     if (res.ok) {
@@ -249,12 +251,21 @@ export default function InboxPage() {
                   />
                   <div className="flex items-center justify-between px-4 pb-3">
                     <div className="flex items-center gap-1">
-                      <button className="flex h-7 w-7 items-center justify-center rounded-md text-surface-600 hover:text-surface-400 hover:bg-surface-800 transition-all"><Mail size={13} /></button>
+                      <button
+                        onClick={() => setSendMode(sendMode === "email" ? "log" : "email")}
+                        title={sendMode === "email" ? "Currently: Send Email — click to switch to Log Note" : "Click to send as real email"}
+                        className={cn("flex h-7 w-7 items-center justify-center rounded-md transition-all",
+                          sendMode === "email" ? "bg-brand-500/20 text-brand-400" : "text-surface-600 hover:text-surface-400 hover:bg-surface-800")}>
+                        <Mail size={13} />
+                      </button>
                       <button className="flex h-7 w-7 items-center justify-center rounded-md text-surface-600 hover:text-surface-400 hover:bg-surface-800 transition-all"><MessageSquare size={13} /></button>
                       <button className="flex h-7 w-7 items-center justify-center rounded-md text-surface-600 hover:text-surface-400 hover:bg-surface-800 transition-all"><Phone size={13} /></button>
+                      {sendMode === "email" && selectedContact?.email && (
+                        <span className="text-[10px] text-brand-400 ml-1">→ {selectedContact.email}</span>
+                      )}
                     </div>
                     <Button variant="gradient" size="sm" icon={Send} loading={sending} onClick={handleSend} disabled={!reply.trim()}>
-                      Log Activity
+                      {sendMode === "email" ? "Send Email" : "Log Activity"}
                     </Button>
                   </div>
                 </div>

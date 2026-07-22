@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { deals } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+import { triggerAutomation } from "@/lib/automation";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const orgId = request.headers.get("x-tenant-id");
@@ -9,6 +10,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   const { id } = await params;
   const body = await request.json();
+
+  // Fetch existing deal to get contactId for automation trigger
+  const [existing] = await db
+    .select({ contactId: deals.contactId })
+    .from(deals)
+    .where(and(eq(deals.id, id), eq(deals.organizationId, orgId)))
+    .limit(1);
 
   const allowed = ["name","value","stage","probability","contactId","companyId","ownerId","tags","notes","expectedCloseDate","wonAt","lostAt","lostReason"] as const;
   const updates: Record<string, unknown> = {};
@@ -21,6 +29,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   updates.updatedAt = new Date();
 
   await db.update(deals).set(updates).where(and(eq(deals.id, id), eq(deals.organizationId, orgId)));
+
+  if (body.stage) {
+    await triggerAutomation(orgId, "deal.stage_changed", {
+      dealId: id,
+      contactId: (body.contactId ?? existing?.contactId) ?? undefined,
+    });
+  }
+
   return NextResponse.json({ ok: true });
 }
 
