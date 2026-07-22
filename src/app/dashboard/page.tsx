@@ -21,10 +21,10 @@ const DEFAULT_KPIS = {
   pipelineValue: { value: 0, change: 0, trend: "up" as const },
   avgDealSize: { value: 0, change: 0, trend: "up" as const },
   winRate: { value: 0, change: 0, trend: "up" as const },
-  churnRate: { value: 2.1, change: -0.4, trend: "up" as const },
-  cac: { value: 1840, change: -8.3, trend: "up" as const },
-  ltv: { value: 28400, change: 14.2, trend: "up" as const },
-  nps: { value: 67, change: 5, trend: "up" as const },
+  churnRate: { value: 0, change: 0, trend: "up" as const },
+  cac: { value: 0, change: 0, trend: "up" as const },
+  ltv: { value: 0, change: 0, trend: "up" as const },
+  nps: { value: 0, change: 0, trend: "up" as const },
   openTickets: { value: 0, change: 0, trend: "up" as const },
   activeWorkflows: { value: 0, enrolled: 0 },
 };
@@ -130,23 +130,10 @@ export default function DashboardPage() {
           <ConversionFunnelChart />
           <div className="rounded-xl border border-surface-800 bg-surface-900/50 p-5">
             <h3 className="text-sm font-semibold text-surface-200 mb-4">Team Quota Attainment</h3>
-            <div className="space-y-3">
-              {[
-                { name: "Alex Rivera", quota: 99.2, color: "bg-brand-500" },
-                { name: "Sam Park", quota: 101.8, color: "bg-emerald-500" },
-                { name: "Jordan Lee", quota: 90.6, color: "bg-amber-500" },
-                { name: "Maya Thompson", quota: 104.1, color: "bg-cyan-500" },
-              ].map((rep) => (
-                <div key={rep.name}>
-                  <div className="flex justify-between items-center mb-1.5">
-                    <span className="text-xs text-surface-400">{rep.name}</span>
-                    <span className={`text-xs font-bold ${rep.quota >= 100 ? "text-emerald-400" : "text-amber-400"}`}>{rep.quota}%</span>
-                  </div>
-                  <div className="h-1.5 rounded-full bg-surface-800">
-                    <div className={`h-full rounded-full ${rep.color}`} style={{ width: `${Math.min(rep.quota, 110)}%` }} />
-                  </div>
-                </div>
-              ))}
+            <div className="flex flex-col items-center justify-center py-8 text-center gap-2">
+              <Target size={24} className="text-surface-600" />
+              <p className="text-xs text-surface-500">No team data yet.</p>
+              <p className="text-xs text-surface-600">Add deals and assign owners to track quota.</p>
             </div>
           </div>
         </div>

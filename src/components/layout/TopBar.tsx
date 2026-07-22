@@ -20,8 +20,8 @@ import {
   Users,
   Mail,
 } from "lucide-react";
-import { mockKPIs } from "@/lib/data";
 import { formatCurrency } from "@/lib/utils";
+import { useSession } from "@/hooks/useSession";
 
 interface TopBarProps {
   collapsed: boolean;
@@ -32,6 +32,8 @@ export function TopBar({ collapsed, onToggleCollapse }: TopBarProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
   const [notifOpen, setNotifOpen] = useState(false);
+  const { session } = useSession();
+  const userName = session?.user?.name ?? session?.org?.name ?? "…";
 
   const notifications = [
     {
@@ -86,25 +88,19 @@ export function TopBar({ collapsed, onToggleCollapse }: TopBarProps) {
         <div className="flex items-center gap-1.5 text-xs">
           <TrendingUp size={12} className="text-emerald-400" />
           <span className="text-surface-500">MRR</span>
-          <span className="font-semibold text-emerald-400">
-            {formatCurrency(mockKPIs.mrr.value)}
-          </span>
+          <span className="font-semibold text-emerald-400">—</span>
         </div>
         <div className="h-3 w-px bg-surface-800" />
         <div className="flex items-center gap-1.5 text-xs">
           <Users size={12} className="text-brand-400" />
           <span className="text-surface-500">Contacts</span>
-          <span className="font-semibold text-brand-400">
-            {mockKPIs.totalContacts.value.toLocaleString()}
-          </span>
+          <span className="font-semibold text-brand-400">—</span>
         </div>
         <div className="h-3 w-px bg-surface-800" />
         <div className="flex items-center gap-1.5 text-xs">
           <TrendingUp size={12} className="text-violet-400" />
           <span className="text-surface-500">Pipeline</span>
-          <span className="font-semibold text-violet-400">
-            {formatCurrency(mockKPIs.pipelineValue.value)}
-          </span>
+          <span className="font-semibold text-violet-400">—</span>
         </div>
       </div>
 
@@ -221,7 +217,7 @@ export function TopBar({ collapsed, onToggleCollapse }: TopBarProps) {
 
       {/* User avatar */}
       <div className="flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-surface-800/60 cursor-pointer transition-colors">
-        <Avatar name="Alex Rivera" size="sm" status="online" />
+        <Avatar name={userName} size="sm" status="online" />
         <ChevronDown size={12} className="text-surface-600" />
       </div>
     </header>

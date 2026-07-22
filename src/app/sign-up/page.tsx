@@ -140,8 +140,11 @@ export default function SignUpPage() {
   return (
     <div className="min-h-screen bg-[#04080F] flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
-        <div className="flex justify-center mb-8">
-          <Image src="/nxtgen-logo.png" alt="NxtGen" width={160} height={60} priority />
+        <div className="flex flex-col items-center gap-2 mb-8">
+          <div style={{ width: 158, height: 32, overflow: "hidden" }}>
+            <img src="/nxg-logo-dark.svg" alt="NxtGen" style={{ height: 32, width: "auto" }} />
+          </div>
+          <span className="text-sm font-semibold tracking-widest text-violet-400 uppercase">Convert</span>
         </div>
         <Suspense>
           <SignUpForm />

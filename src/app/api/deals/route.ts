@@ -61,8 +61,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const orgId = request.headers.get("x-tenant-id");
+    if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     const [deal] = await db.insert(deals).values({
-      organizationId: body.organizationId,
+      organizationId: orgId,
       name: body.name,
       value: body.value?.toString(),
       stage: body.stage || "prospecting",

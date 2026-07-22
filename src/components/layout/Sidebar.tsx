@@ -32,6 +32,7 @@ import {
   Hash,
 } from "lucide-react";
 import { useState } from "react";
+import { useSession } from "@/hooks/useSession";
 
 interface NavItem {
   label: string;
@@ -172,6 +173,9 @@ interface SidebarProps {
 export function Sidebar({ collapsed }: SidebarProps) {
   const pathname = usePathname();
   const [expanded, setExpanded] = useState<string[]>(["/crm", "/email", "/automation"]);
+  const { session } = useSession();
+  const userName  = session?.user?.name  ?? session?.org?.name ?? "…";
+  const userTitle = session?.user?.jobTitle ?? session?.role ?? "";
 
   const toggleExpanded = (href: string) => {
     setExpanded((prev) =>
@@ -194,18 +198,13 @@ export function Sidebar({ collapsed }: SidebarProps) {
       {/* Logo */}
       <div className="flex h-14 shrink-0 items-center border-b border-surface-800 px-4">
         <div className="flex items-center gap-2.5">
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg gradient-brand">
-            <span className="text-white font-black text-xs">NX</span>
+          <div style={{ width: collapsed ? 28 : 110, height: 22, overflow: "hidden", flexShrink: 0 }}>
+            <img src="/nxg-logo-dark.svg" alt="NxtGen" style={{ height: 22, width: "auto" }} />
           </div>
           {!collapsed && (
-            <div>
-              <span className="text-sm font-bold text-surface-50 tracking-tight">
-                NxtGen
-              </span>
-              <span className="text-sm font-bold text-brand-400 tracking-tight">
-                {" "}OS
-              </span>
-            </div>
+            <span className="text-xs font-semibold tracking-widest text-brand-400 uppercase">
+              Convert
+            </span>
           )}
         </div>
       </div>
@@ -232,12 +231,12 @@ export function Sidebar({ collapsed }: SidebarProps) {
           </div>
         ) : (
           <div className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-surface-800/60 cursor-pointer transition-colors">
-            <Avatar name="Alex Rivera" size="sm" status="online" />
+            <Avatar name={userName} size="sm" status="online" />
             <div className="flex-1 min-w-0">
               <p className="text-xs font-semibold text-surface-200 truncate">
-                Alex Rivera
+                {userName}
               </p>
-              <p className="text-[10px] text-surface-500 truncate">Head of Revenue</p>
+              <p className="text-[10px] text-surface-500 truncate">{userTitle}</p>
             </div>
             <ChevronDown size={12} className="text-surface-500 shrink-0" />
           </div>

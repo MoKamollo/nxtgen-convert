@@ -1,44 +1,61 @@
 "use client";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { Card } from "@/components/ui/Card";
-import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Avatar } from "@/components/ui/Avatar";
-import { formatCurrency, cn } from "@/lib/utils";
-import {
-  Plus,
-  Search,
-  Building2,
-  Globe,
-  Users,
-  TrendingUp,
-  MoreHorizontal,
-  ExternalLink,
-} from "lucide-react";
-import { useState } from "react";
+import { cn } from "@/lib/utils";
+import { Plus, Search, Building2, Globe, Users, X, Loader2 } from "lucide-react";
+import { useState, useEffect } from "react";
 
-const companies = [
-  { id: "co1", name: "TechCorp Inc", domain: "techcorp.com", industry: "Technology", size: "201-500", employees: 340, revenue: 48000, contacts: 4, status: "customer", healthScore: 92 },
-  { id: "co2", name: "Innovate IO", domain: "innovate.io", industry: "SaaS", size: "11-50", employees: 28, revenue: 0, contacts: 2, status: "prospect", healthScore: 71 },
-  { id: "co3", name: "ScaleX AI", domain: "scalex.ai", industry: "AI/ML", size: "51-200", employees: 120, revenue: 120000, contacts: 5, status: "vip", healthScore: 41 },
-  { id: "co4", name: "BuildFast Co", domain: "buildfast.co", industry: "Developer Tools", size: "1-10", employees: 8, revenue: 24000, contacts: 3, status: "customer", healthScore: 85 },
-  { id: "co5", name: "NextStep Co", domain: "nextstep.co", industry: "Marketing", size: "11-50", employees: 35, revenue: 0, contacts: 1, status: "lead", healthScore: 63 },
-  { id: "co6", name: "Global Ops", domain: "globalops.com", industry: "Operations", size: "201-500", employees: 280, revenue: 0, contacts: 2, status: "lead", healthScore: 78 },
-];
-
-const statusColors: Record<string, string> = {
-  customer: "text-emerald-400 bg-emerald-500/10",
-  prospect: "text-blue-400 bg-blue-500/10",
-  vip: "text-violet-400 bg-violet-500/10",
-  lead: "text-surface-400 bg-surface-800",
+type Company = {
+  id: string; name: string; domain: string | null; industry: string | null;
+  size: string | null; website: string | null; phone: string | null;
+  revenue: number; contactCount: number; tags: string[];
 };
 
-export default function CompaniesPage() {
-  const [search, setSearch] = useState("");
+const INDUSTRY_OPTIONS = ["Technology","SaaS","E-commerce","Healthcare","Finance","Marketing","Education","Real Estate","Other"];
+const SIZE_OPTIONS = ["1-10","11-50","51-200","201-500","500+"];
 
-  const filtered = companies.filter((c) =>
-    !search || c.name.toLowerCase().includes(search.toLowerCase())
+export default function CompaniesPage() {
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [showModal, setShowModal] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ name:"", domain:"", industry:"", size:"", website:"", phone:"" });
+
+  const load = () => {
+    setLoading(true);
+    fetch("/api/companies").then(r => r.json())
+      .then(j => { setCompanies(j.data ?? []); setLoading(false); })
+      .catch(() => setLoading(false));
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const filtered = companies.filter(c =>
+    !search || c.name.toLowerCase().includes(search.toLowerCase()) ||
+    (c.domain ?? "").toLowerCase().includes(search.toLowerCase())
   );
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.name.trim()) return;
+    setSaving(true);
+    await fetch("/api/companies", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form),
+    });
+    setSaving(false);
+    setShowModal(false);
+    setForm({ name:"", domain:"", industry:"", size:"", website:"", phone:"" });
+    load();
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Delete this company?")) return;
+    await fetch(`/api/companies/${id}`, { method: "DELETE" });
+    setCompanies(prev => prev.filter(c => c.id !== id));
+  };
 
   return (
     <AppLayout>
@@ -46,96 +63,133 @@ export default function CompaniesPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-surface-50 tracking-tight">Companies</h1>
-            <p className="text-sm text-surface-500 mt-0.5">{companies.length} companies</p>
+            <p className="text-sm text-surface-500 mt-0.5">{companies.length} {companies.length === 1 ? "company" : "companies"}</p>
           </div>
-          <Button variant="gradient" size="sm" icon={Plus}>Add Company</Button>
+          <Button variant="gradient" size="sm" icon={Plus} onClick={() => setShowModal(true)}>Add Company</Button>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="relative max-w-xs w-full">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-500 pointer-events-none" />
-            <input
-              type="text"
-              placeholder="Search companies..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full h-8 rounded-lg border border-surface-700 bg-surface-900 pl-9 pr-3 text-xs text-surface-200 placeholder:text-surface-600 focus:outline-none focus:border-brand-500"
-            />
-          </div>
+        <div className="relative max-w-xs w-full">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-500 pointer-events-none" />
+          <input type="text" placeholder="Search companies…" value={search} onChange={e => setSearch(e.target.value)}
+            className="w-full h-9 rounded-lg border border-surface-700 bg-surface-900 pl-9 pr-3 text-sm text-surface-200 placeholder:text-surface-600 focus:outline-none focus:border-brand-500" />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((company) => (
-            <Card key={company.id} hover className="cursor-pointer group">
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500/20 to-violet-500/20 border border-brand-500/20">
-                    <Building2 size={18} className="text-brand-400" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-surface-100">{company.name}</p>
-                    <div className="flex items-center gap-1 mt-0.5">
-                      <Globe size={10} className="text-surface-600" />
-                      <span className="text-[11px] text-surface-500">{company.domain}</span>
-                    </div>
-                  </div>
+        {loading ? (
+          <div className="flex items-center justify-center py-20"><Loader2 size={24} className="animate-spin text-surface-500" /></div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-3 rounded-xl border border-surface-800 bg-surface-900/50">
+            <Building2 size={32} className="text-surface-600" />
+            <p className="text-sm font-medium text-surface-400">{search ? "No companies match your search" : "No companies yet"}</p>
+            {!search && <Button variant="gradient" size="sm" icon={Plus} onClick={() => setShowModal(true)}>Add your first company</Button>}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-surface-800 overflow-hidden">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-surface-800 bg-surface-900/60">
+                  {["Company","Industry","Size","Contacts","Website",""].map(h => (
+                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-surface-500 uppercase tracking-wider">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-surface-800/60">
+                {filtered.map(c => (
+                  <tr key={c.id} className="hover:bg-surface-800/30 transition-colors group">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-800 text-surface-400">
+                          <Building2 size={14} />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-surface-100">{c.name}</p>
+                          {c.domain && <p className="text-xs text-surface-500">{c.domain}</p>}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-surface-400">{c.industry ?? "—"}</td>
+                    <td className="px-4 py-3 text-sm text-surface-400">{c.size ?? "—"}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5 text-sm text-surface-400">
+                        <Users size={12} />{c.contactCount}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {c.website
+                        ? <a href={c.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-brand-400 hover:underline"><Globe size={12} />Visit</a>
+                        : <span className="text-xs text-surface-600">—</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      <button onClick={() => handleDelete(c.id)} className="opacity-0 group-hover:opacity-100 text-xs text-red-400 hover:underline transition-opacity">Delete</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-surface-700 bg-surface-900 shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-surface-800">
+              <h2 className="text-sm font-bold text-surface-100">Add Company</h2>
+              <button onClick={() => setShowModal(false)} className="text-surface-500 hover:text-surface-300"><X size={16} /></button>
+            </div>
+            <form onSubmit={handleCreate} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-surface-400 mb-1.5">Company name *</label>
+                <input required value={form.name} onChange={e => setForm(p => ({...p, name: e.target.value}))} placeholder="Acme Corp"
+                  className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 placeholder:text-surface-600 focus:outline-none focus:border-brand-500" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-surface-400 mb-1.5">Domain</label>
+                  <input value={form.domain} onChange={e => setForm(p => ({...p, domain: e.target.value}))} placeholder="acme.com"
+                    className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 placeholder:text-surface-600 focus:outline-none focus:border-brand-500" />
                 </div>
-                <button className="opacity-0 group-hover:opacity-100 text-surface-600 hover:text-surface-300 transition-all">
-                  <MoreHorizontal size={15} />
+                <div>
+                  <label className="block text-xs font-semibold text-surface-400 mb-1.5">Phone</label>
+                  <input value={form.phone} onChange={e => setForm(p => ({...p, phone: e.target.value}))} placeholder="+1 555 000 0000"
+                    className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 placeholder:text-surface-600 focus:outline-none focus:border-brand-500" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-surface-400 mb-1.5">Industry</label>
+                  <select value={form.industry} onChange={e => setForm(p => ({...p, industry: e.target.value}))}
+                    className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 focus:outline-none focus:border-brand-500">
+                    <option value="">Select…</option>
+                    {INDUSTRY_OPTIONS.map(o => <option key={o}>{o}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-surface-400 mb-1.5">Size</label>
+                  <select value={form.size} onChange={e => setForm(p => ({...p, size: e.target.value}))}
+                    className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 focus:outline-none focus:border-brand-500">
+                    <option value="">Select…</option>
+                    {SIZE_OPTIONS.map(o => <option key={o}>{o}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-surface-400 mb-1.5">Website</label>
+                <input value={form.website} onChange={e => setForm(p => ({...p, website: e.target.value}))} placeholder="https://acme.com"
+                  className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 placeholder:text-surface-600 focus:outline-none focus:border-brand-500" />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setShowModal(false)}
+                  className="h-9 px-4 rounded-lg border border-surface-700 text-sm text-surface-400 hover:text-surface-200 hover:bg-surface-800 transition-colors">Cancel</button>
+                <button type="submit" disabled={saving}
+                  className="h-9 px-4 rounded-lg bg-gradient-to-r from-brand-500 to-blue-500 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50 flex items-center gap-2">
+                  {saving && <Loader2 size={13} className="animate-spin" />}
+                  {saving ? "Saving…" : "Add Company"}
                 </button>
               </div>
-
-              <div className="grid grid-cols-2 gap-2 mb-3">
-                <div className="rounded-lg bg-surface-800/60 p-2">
-                  <p className="text-[10px] text-surface-500">Employees</p>
-                  <p className="text-xs font-bold text-surface-200 mt-0.5">{company.employees}</p>
-                </div>
-                <div className="rounded-lg bg-surface-800/60 p-2">
-                  <p className="text-[10px] text-surface-500">Revenue</p>
-                  <p className={cn("text-xs font-bold mt-0.5", company.revenue > 0 ? "text-emerald-400" : "text-surface-500")}>
-                    {company.revenue > 0 ? formatCurrency(company.revenue) : "—"}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <Users size={11} className="text-surface-600" />
-                  <span className="text-[11px] text-surface-500">{company.contacts} contacts</span>
-                  <span className="text-surface-700">·</span>
-                  <span className="text-[11px] text-surface-500">{company.industry}</span>
-                </div>
-                <div className={cn("text-[11px] font-semibold px-2 py-0.5 rounded-full", statusColors[company.status])}>
-                  {company.status.charAt(0).toUpperCase() + company.status.slice(1)}
-                </div>
-              </div>
-
-              <div className="mt-3">
-                <div className="flex items-center justify-between text-[10px] mb-1">
-                  <span className="text-surface-600">Health Score</span>
-                  <span className={cn(
-                    "font-semibold",
-                    company.healthScore >= 80 ? "text-emerald-400" :
-                    company.healthScore >= 60 ? "text-amber-400" : "text-red-400"
-                  )}>
-                    {company.healthScore}
-                  </span>
-                </div>
-                <div className="h-1 rounded-full bg-surface-800">
-                  <div
-                    className={cn(
-                      "h-full rounded-full",
-                      company.healthScore >= 80 ? "bg-emerald-500" :
-                      company.healthScore >= 60 ? "bg-amber-500" : "bg-red-500"
-                    )}
-                    style={{ width: `${company.healthScore}%` }}
-                  />
-                </div>
-              </div>
-            </Card>
-          ))}
+            </form>
+          </div>
         </div>
-      </div>
+      )}
     </AppLayout>
   );
 }

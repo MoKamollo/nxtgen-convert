@@ -18,8 +18,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const orgId = request.headers.get("x-tenant-id");
+    if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     const [task] = await db.insert(tasks).values({
-      organizationId: body.organizationId,
+      organizationId: orgId,
       title: body.title,
       description: body.description,
       status: body.status || "todo",

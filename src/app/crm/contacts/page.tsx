@@ -28,7 +28,8 @@ import {
   RefreshCcw,
   ArrowUpDown,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { X, Loader2 } from "lucide-react";
 
 type Contact = {
   id: string; firstName: string; lastName: string; email: string; phone: string;
@@ -53,13 +54,40 @@ export default function ContactsPage() {
   const [sortBy, setSortBy] = useState("score");
   const [allContacts, setAllContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ firstName:"", lastName:"", email:"", phone:"", status:"lead", jobTitle:"", source:"" });
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoading(true);
     fetch(apiUrl("/api/contacts"))
       .then((r) => r.json())
       .then((j) => { setAllContacts(j.data ?? []); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.firstName.trim()) return;
+    setSaving(true);
+    await fetch("/api/contacts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form),
+    });
+    setSaving(false);
+    setShowModal(false);
+    setForm({ firstName:"", lastName:"", email:"", phone:"", status:"lead", jobTitle:"", source:"" });
+    load();
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Delete this contact?")) return;
+    await fetch(`/api/contacts/${id}`, { method: "DELETE" });
+    setAllContacts(prev => prev.filter(c => c.id !== id));
+  };
 
   const filtered = allContacts.filter((c) => {
     const matchesSearch =
@@ -106,7 +134,7 @@ export default function ContactsPage() {
             <Button variant="outline" size="sm" icon={Download}>
               Export
             </Button>
-            <Button variant="gradient" size="sm" icon={Plus}>
+            <Button variant="gradient" size="sm" icon={Plus} onClick={() => setShowModal(true)}>
               Add Contact
             </Button>
           </div>
@@ -358,8 +386,8 @@ export default function ContactsPage() {
                           <button className="flex h-6 w-6 items-center justify-center rounded-md text-surface-500 hover:text-emerald-400 hover:bg-emerald-500/10 transition-all">
                             <Phone size={12} />
                           </button>
-                          <button className="flex h-6 w-6 items-center justify-center rounded-md text-surface-500 hover:text-surface-300 hover:bg-surface-700 transition-all">
-                            <MoreHorizontal size={12} />
+                          <button onClick={() => handleDelete(contact.id)} className="flex h-6 w-6 items-center justify-center rounded-md text-surface-500 hover:text-red-400 hover:bg-red-500/10 transition-all">
+                            <X size={12} />
                           </button>
                         </div>
                       </td>
@@ -455,6 +483,83 @@ export default function ContactsPage() {
           </div>
         )}
       </div>
+
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-2xl border border-surface-700 bg-surface-900 shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-surface-800">
+              <h2 className="text-sm font-bold text-surface-100">Add Contact</h2>
+              <button onClick={() => setShowModal(false)} className="text-surface-500 hover:text-surface-300"><X size={16} /></button>
+            </div>
+            <form onSubmit={handleCreate} className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-surface-400 mb-1.5">First name *</label>
+                  <input required value={form.firstName} onChange={e => setForm(p => ({...p, firstName: e.target.value}))} placeholder="Jane"
+                    className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 placeholder:text-surface-600 focus:outline-none focus:border-brand-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-surface-400 mb-1.5">Last name</label>
+                  <input value={form.lastName} onChange={e => setForm(p => ({...p, lastName: e.target.value}))} placeholder="Doe"
+                    className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 placeholder:text-surface-600 focus:outline-none focus:border-brand-500" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-surface-400 mb-1.5">Email</label>
+                <input type="email" value={form.email} onChange={e => setForm(p => ({...p, email: e.target.value}))} placeholder="jane@example.com"
+                  className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 placeholder:text-surface-600 focus:outline-none focus:border-brand-500" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-surface-400 mb-1.5">Phone</label>
+                  <input value={form.phone} onChange={e => setForm(p => ({...p, phone: e.target.value}))} placeholder="+1 555 000 0000"
+                    className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 placeholder:text-surface-600 focus:outline-none focus:border-brand-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-surface-400 mb-1.5">Job title</label>
+                  <input value={form.jobTitle} onChange={e => setForm(p => ({...p, jobTitle: e.target.value}))} placeholder="VP of Sales"
+                    className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 placeholder:text-surface-600 focus:outline-none focus:border-brand-500" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-surface-400 mb-1.5">Status</label>
+                  <select value={form.status} onChange={e => setForm(p => ({...p, status: e.target.value}))}
+                    className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 focus:outline-none focus:border-brand-500">
+                    <option value="lead">Lead</option>
+                    <option value="prospect">Prospect</option>
+                    <option value="customer">Customer</option>
+                    <option value="vip">VIP</option>
+                    <option value="churned">Churned</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-surface-400 mb-1.5">Source</label>
+                  <select value={form.source} onChange={e => setForm(p => ({...p, source: e.target.value}))}
+                    className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 focus:outline-none focus:border-brand-500">
+                    <option value="">Select…</option>
+                    <option value="organic">Organic</option>
+                    <option value="referral">Referral</option>
+                    <option value="paid_ads">Paid Ads</option>
+                    <option value="cold_outreach">Cold Outreach</option>
+                    <option value="event">Event</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setShowModal(false)}
+                  className="h-9 px-4 rounded-lg border border-surface-700 text-sm text-surface-400 hover:text-surface-200 hover:bg-surface-800 transition-colors">Cancel</button>
+                <button type="submit" disabled={saving}
+                  className="h-9 px-4 rounded-lg bg-gradient-to-r from-brand-500 to-blue-500 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50 flex items-center gap-2">
+                  {saving && <Loader2 size={13} className="animate-spin" />}
+                  {saving ? "Saving…" : "Add Contact"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </AppLayout>
   );
 }
