@@ -1,7 +1,8 @@
 "use client";
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Zap, Mail, Lock, ArrowRight, AlertCircle } from "lucide-react";
+import Image from "next/image";
+import { Mail, Lock, ArrowRight, AlertCircle } from "lucide-react";
 
 function LoginForm() {
   const router = useRouter();
@@ -113,11 +114,8 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-[#04080F] flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
-        <div className="flex items-center gap-2.5 mb-8 justify-center">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#7B6EF6] to-[#3B9EFF]">
-            <Zap size={18} className="text-white" />
-          </div>
-          <span className="text-lg font-bold text-white tracking-tight">NxtGen Convert</span>
+        <div className="flex justify-center mb-8">
+          <Image src="/nxtgen-logo.png" alt="NxtGen" width={160} height={60} priority />
         </div>
         <Suspense>
           <LoginForm />
