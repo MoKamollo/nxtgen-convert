@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     const regRes = await fetch(SPACE_REGISTER_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, email, password }),
+      body: JSON.stringify({ name, email, password, redirect_after_verify: "https://convert.nxtgen-stack.com/login?verified=1" }),
     });
 
     const regData = await regRes.json();
