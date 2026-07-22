@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { contacts, deals, revenueMetrics, workflows, tickets } from "@/db/schema";
-import { eq, desc, sql } from "drizzle-orm";
+import { contacts, deals, revenueMetrics, workflows, tickets, marketingSpend, npsResponses } from "@/db/schema";
+import { eq, desc, sql, and, gte, isNotNull } from "drizzle-orm";
 
 const STAGE_COLORS: Record<string, string> = {
   prospecting:   "#94a3b8",
@@ -19,12 +19,19 @@ export async function GET(request: NextRequest) {
   if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
   try {
-    const [contactRows, dealRows, metrics, workflowRows, ticketRows] = await Promise.all([
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const [contactRows, dealRows, metrics, workflowRows, ticketRows, spendRows, npsRows] = await Promise.all([
       db.select().from(contacts).where(eq(contacts.organizationId, orgId)),
       db.select().from(deals).where(eq(deals.organizationId, orgId)),
       db.select().from(revenueMetrics).where(eq(revenueMetrics.organizationId, orgId)).orderBy(desc(revenueMetrics.date)).limit(13),
       db.select().from(workflows).where(eq(workflows.organizationId, orgId)),
       db.select().from(tickets).where(eq(tickets.organizationId, orgId)),
+      db.select().from(marketingSpend).where(eq(marketingSpend.organizationId, orgId)),
+      db.select({ score: npsResponses.score }).from(npsResponses)
+        .where(and(eq(npsResponses.organizationId, orgId), isNotNull(npsResponses.submittedAt), isNotNull(npsResponses.score))),
     ]);
 
     // ── KPI derivations ────────────────────────────────────────────────────────
@@ -43,6 +50,25 @@ export async function GET(request: NextRequest) {
     const churnedContacts = contactRows.filter(c => c.status === "churned").length;
     const churnRate = contactRows.length > 0 ? Math.round((churnedContacts / contactRows.length) * 1000) / 10 : 0;
 
+    // ── CAC ──────────────────────────────────────────────────────────────────────
+    const thisMonthSpend = spendRows
+      .filter(s => s.month === currentMonth)
+      .reduce((sum, s) => sum + parseFloat(s.amount ?? "0"), 0);
+    const newCustomersThisMonth = contactRows.filter(c =>
+      (c.status === "customer" || c.status === "vip") && new Date(c.createdAt) >= monthStart
+    ).length;
+    const cac = thisMonthSpend > 0 && newCustomersThisMonth > 0
+      ? Math.round(thisMonthSpend / newCustomersThisMonth)
+      : 0;
+
+    // ── NPS ──────────────────────────────────────────────────────────────────────
+    const scores = npsRows.map(r => r.score ?? 0);
+    const promoters  = scores.filter(s => s >= 9).length;
+    const detractors = scores.filter(s => s <= 6).length;
+    const npsScore   = scores.length > 0
+      ? Math.round(((promoters - detractors) / scores.length) * 100)
+      : 0;
+
     // MRR/ARR: from revenueMetrics if available, otherwise sum from deals closed this month
     const latestMetric = metrics[0];
     const prevMetric   = metrics[1];
@@ -50,7 +76,6 @@ export async function GET(request: NextRequest) {
     let arr = parseFloat(latestMetric?.arr ?? "0");
 
     if (mrr === 0 && wonDeals.length > 0) {
-      const now = new Date();
       const thisMonthWon = wonDeals.filter(d => {
         const wonAt = d.wonAt ?? d.updatedAt;
         return wonAt && new Date(wonAt).getMonth() === now.getMonth() && new Date(wonAt).getFullYear() === now.getFullYear();
@@ -72,9 +97,9 @@ export async function GET(request: NextRequest) {
       avgDealSize:     { value: Math.round(avgDealSize),     change: 0,                          trend: "up" },
       winRate:         { value: winRate,                     change: 0,                          trend: "up" },
       churnRate:       { value: churnRate,                   change: 0,                          trend: "down" },
-      cac:             { value: 0,                           change: 0,                          trend: "up" },
+      cac:             { value: cac,                         change: 0,                          trend: "up" },
       ltv:             { value: mrr > 0 && churnRate > 0 ? Math.round(mrr / (churnRate / 100)) : avgDealSize > 0 ? Math.round(avgDealSize * 3) : 0, change: 0, trend: "up" },
-      nps:             { value: 0,                           change: 0,                          trend: "up" },
+      nps:             { value: npsScore,                    change: 0,                          trend: "up" },
       openTickets:     { value: openTickets,                 change: 0,                          trend: "up" },
       activeWorkflows: { value: activeWorkflowRows.length,   enrolled: enrolledCount },
     };

@@ -9,7 +9,7 @@ import { apiUrl } from "@/lib/org";
 import {
   User, Building2, Shield, Bell, Key, Plug, CreditCard,
   Palette, Code, Users, Check, Zap, Mail, MessageSquare,
-  Calendar, Database, Webhook, Loader2, Plus, X, Trash2,
+  Calendar, Database, Webhook, Loader2, Plus, X, Trash2, TrendingUp,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -34,6 +34,7 @@ const SETTINGS_SECTIONS = [
   { id: "profile",       label: "Profile",       icon: User },
   { id: "organization",  label: "Organization",  icon: Building2 },
   { id: "team",          label: "Team Members",  icon: Users },
+  { id: "growth",        label: "Growth & CAC",  icon: TrendingUp },
   { id: "billing",       label: "Billing & Plans", icon: CreditCard },
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "security",      label: "Security",      icon: Shield },
@@ -79,6 +80,11 @@ export default function SettingsPage() {
   const [editMemberId, setEditMemberId] = useState<string | null>(null);
   const [editMemberRole, setEditMemberRole] = useState("");
 
+  type SpendRow = { id: string; month: string; channel: string; amount: string; notes: string | null };
+  const [spendRows, setSpendRows] = useState<SpendRow[]>([]);
+  const [spendForm, setSpendForm] = useState({ month: new Date().toISOString().slice(0, 7), channel: "other", amount: "", notes: "" });
+  const [addingSpend, setAddingSpend] = useState(false);
+
   useEffect(() => {
     fetch(apiUrl("/api/users/me"))
       .then(r => r.json())
@@ -97,6 +103,14 @@ export default function SettingsPage() {
       })
       .catch(() => setLoadingUser(false));
   }, []);
+
+  useEffect(() => {
+    if (activeSection === "growth") {
+      fetch(apiUrl("/api/marketing-spend"))
+        .then(r => r.json())
+        .then(j => setSpendRows(j.data ?? []));
+    }
+  }, [activeSection]);
 
   useEffect(() => {
     if (activeSection === "organization" || activeSection === "team" || activeSection === "billing") {
@@ -170,6 +184,27 @@ export default function SettingsPage() {
   async function handleRemoveMember(memberId: string) {
     await fetch(apiUrl(`/api/team/${memberId}`), { method: "DELETE" });
     setOrgData(null);
+  }
+
+  async function handleAddSpend(e: React.FormEvent) {
+    e.preventDefault();
+    if (!spendForm.amount) return;
+    setAddingSpend(true);
+    const res = await fetch(apiUrl("/api/marketing-spend"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(spendForm),
+    });
+    if (res.ok) {
+      const j = await res.json();
+      setSpendRows(prev => [...prev, j.data]);
+      setSpendForm(f => ({ ...f, amount: "", notes: "" }));
+    }
+    setAddingSpend(false);
+  }
+
+  async function handleDeleteSpend(id: string) {
+    await fetch(apiUrl(`/api/marketing-spend?id=${id}`), { method: "DELETE" });
+    setSpendRows(prev => prev.filter(r => r.id !== id));
   }
 
   const planInfo = PLAN_LABELS[orgData?.plan ?? userData?.org?.plan ?? "starter"] ?? PLAN_LABELS.starter;
@@ -532,6 +567,112 @@ export default function SettingsPage() {
                 <div className="rounded-xl border border-surface-800 bg-surface-900/50 p-8 flex flex-col items-center justify-center gap-2 text-center">
                   <Bell size={24} className="text-surface-600" />
                   <p className="text-sm text-surface-400">Notification preferences coming soon</p>
+                </div>
+              </div>
+            )}
+
+            {/* Growth & CAC */}
+            {activeSection === "growth" && (
+              <div className="space-y-5">
+                <div>
+                  <h2 className="text-lg font-bold text-surface-50">Growth & CAC Tracking</h2>
+                  <p className="text-sm text-surface-500 mt-0.5">Log monthly marketing spend so the dashboard can calculate your Customer Acquisition Cost in real time.</p>
+                </div>
+
+                {/* Add spend form */}
+                <div className="rounded-xl border border-surface-800 bg-surface-900/50 p-5 space-y-4">
+                  <h3 className="text-sm font-semibold text-surface-200">Log Marketing Spend</h3>
+                  <form onSubmit={handleAddSpend} className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs text-surface-400 mb-1 block">Month</label>
+                        <input type="month" value={spendForm.month}
+                          onChange={e => setSpendForm(f => ({ ...f, month: e.target.value }))}
+                          className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 focus:outline-none focus:border-brand-500" />
+                      </div>
+                      <div>
+                        <label className="text-xs text-surface-400 mb-1 block">Channel</label>
+                        <select value={spendForm.channel}
+                          onChange={e => setSpendForm(f => ({ ...f, channel: e.target.value }))}
+                          className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 focus:outline-none focus:border-brand-500">
+                          {["google_ads","meta_ads","linkedin_ads","content","seo","events","referral","other"].map(c => (
+                            <option key={c} value={c}>{c.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs text-surface-400 mb-1 block">Amount (USD)</label>
+                        <input type="number" min="0" step="0.01" placeholder="5000" value={spendForm.amount}
+                          onChange={e => setSpendForm(f => ({ ...f, amount: e.target.value }))}
+                          required
+                          className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 focus:outline-none focus:border-brand-500" />
+                      </div>
+                      <div>
+                        <label className="text-xs text-surface-400 mb-1 block">Notes (optional)</label>
+                        <input type="text" placeholder="e.g. Q1 campaign" value={spendForm.notes}
+                          onChange={e => setSpendForm(f => ({ ...f, notes: e.target.value }))}
+                          className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 focus:outline-none focus:border-brand-500" />
+                      </div>
+                    </div>
+                    <Button type="submit" variant="gradient" size="sm" icon={Plus} loading={addingSpend}>Add Spend Entry</Button>
+                  </form>
+                </div>
+
+                {/* Spend history */}
+                <div className="rounded-xl border border-surface-800 bg-surface-900/50 overflow-hidden">
+                  <div className="px-5 py-3 border-b border-surface-800">
+                    <h3 className="text-sm font-semibold text-surface-200">Spend History</h3>
+                  </div>
+                  {spendRows.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
+                      <TrendingUp size={20} className="text-surface-600" />
+                      <p className="text-xs text-surface-400">No spend logged yet</p>
+                      <p className="text-[11px] text-surface-600">Add your first entry above and CAC will appear on the dashboard</p>
+                    </div>
+                  ) : (
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-surface-800">
+                          <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-surface-500 uppercase tracking-wider">Month</th>
+                          <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-surface-500 uppercase tracking-wider">Channel</th>
+                          <th className="px-4 py-2.5 text-right text-[10px] font-semibold text-surface-500 uppercase tracking-wider">Amount</th>
+                          <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-surface-500 uppercase tracking-wider">Notes</th>
+                          <th className="px-4 py-2.5" />
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-surface-800/50">
+                        {spendRows.map(row => (
+                          <tr key={row.id} className="hover:bg-surface-800/30 transition-colors">
+                            <td className="px-4 py-3 text-surface-200">{row.month}</td>
+                            <td className="px-4 py-3 text-surface-400 capitalize">{row.channel.replace(/_/g, " ")}</td>
+                            <td className="px-4 py-3 text-right text-emerald-400 font-semibold">${parseFloat(row.amount).toLocaleString()}</td>
+                            <td className="px-4 py-3 text-surface-500">{row.notes ?? "—"}</td>
+                            <td className="px-4 py-3 text-right">
+                              <button onClick={() => handleDeleteSpend(row.id)} className="text-surface-600 hover:text-red-400 transition-colors">
+                                <Trash2 size={13} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t border-surface-700 bg-surface-800/30">
+                          <td colSpan={2} className="px-4 py-3 text-xs font-semibold text-surface-300">Total</td>
+                          <td className="px-4 py-3 text-right text-xs font-bold text-emerald-400">
+                            ${spendRows.reduce((s, r) => s + parseFloat(r.amount), 0).toLocaleString()}
+                          </td>
+                          <td colSpan={2} />
+                        </tr>
+                      </tfoot>
+                    </table>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-brand-500/20 bg-brand-500/5 p-4">
+                  <p className="text-xs text-brand-300 font-semibold mb-1">How CAC is calculated</p>
+                  <p className="text-xs text-surface-400">CAC = total spend this month ÷ new customers acquired this month. New customers are contacts with status "customer" or "vip" created in the current calendar month.</p>
                 </div>
               </div>
             )}

@@ -498,6 +498,32 @@ export const notifications = pgTable("notifications", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// ─── Growth / CAC ────────────────────────────────────────────────────────────
+
+export const marketingSpend = pgTable("marketing_spend", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  month: text("month").notNull(), // "YYYY-MM"
+  channel: text("channel").notNull().default("other"),
+  amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// ─── NPS ─────────────────────────────────────────────────────────────────────
+
+export const npsResponses = pgTable("nps_responses", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  contactId: uuid("contact_id").references(() => contacts.id),
+  token: text("token").notNull().unique(),
+  score: integer("score"), // 0-10, null until submitted
+  feedback: text("feedback"),
+  submittedAt: timestamp("submitted_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // ─── Relations ────────────────────────────────────────────────────────────────
 
 export const organizationsRelations = relations(organizations, ({ many }) => ({
