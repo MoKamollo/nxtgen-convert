@@ -50,7 +50,7 @@ const INTEGRATIONS = [
   { name: "Google Calendar",  icon: Calendar,     connected: false, category: "Calendar" },
   { name: "Stripe",           icon: CreditCard,   connected: false, category: "Payments" },
   { name: "Zapier",           icon: Zap,          connected: false, category: "Automation" },
-  { name: "PostgreSQL",       icon: Database,     connected: true,  category: "Database" },
+  { name: "PostgreSQL",       icon: Database,     connected: false, category: "Database" },
   { name: "Webhooks",         icon: Webhook,      connected: false, category: "Developer" },
 ];
 
@@ -224,7 +224,7 @@ export default function SettingsPage() {
   }
 
   async function handleDeleteSpend(id: string) {
-    await fetch(apiUrl(`/api/marketing-spend?id=${id}`), { method: "DELETE" });
+    await fetch(apiUrl(`/api/marketing-spend/${id}`), { method: "DELETE" });
     setSpendRows(prev => prev.filter(r => r.id !== id));
   }
 
