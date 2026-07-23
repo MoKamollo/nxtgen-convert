@@ -27,9 +27,9 @@ export async function GET(request: NextRequest) {
         ownerName: users.name,
       })
       .from(deals)
-      .leftJoin(contacts, eq(deals.contactId, contacts.id))
-      .leftJoin(companies, eq(deals.companyId, companies.id))
-      .leftJoin(users, eq(deals.ownerId, users.id));
+      .leftJoin(contacts, and(eq(deals.contactId, contacts.id), eq(contacts.organizationId, orgId)))
+      .leftJoin(companies, and(eq(deals.companyId, companies.id), eq(companies.organizationId, orgId)))
+      .leftJoin(users, and(eq(deals.ownerId, users.id), eq(users.organizationId, orgId)));
 
     const searchParam = request.nextUrl.searchParams.get("search");
     const stageParam  = request.nextUrl.searchParams.get("stage");
@@ -71,9 +71,9 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
     const orgId = request.headers.get("x-tenant-id");
     if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    const body = await request.json();
     const [deal] = await db.insert(deals).values({
       organizationId: orgId,
       name: body.name,

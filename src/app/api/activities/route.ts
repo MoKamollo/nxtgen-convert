@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
         contactLastName: contacts.lastName,
       })
       .from(activities)
-      .leftJoin(contacts, eq(activities.contactId, contacts.id))
+      .leftJoin(contacts, and(eq(activities.contactId, contacts.id), eq(contacts.organizationId, orgId)))
       .where(eq(activities.organizationId, orgId))
       .orderBy(desc(activities.createdAt))
       .limit(50);
@@ -47,9 +47,9 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
     const orgId = request.headers.get("x-tenant-id");
     if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    const body = await request.json();
 
     const [activity] = await db.insert(activities).values({
       organizationId: orgId,
