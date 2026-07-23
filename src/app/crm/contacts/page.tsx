@@ -429,17 +429,27 @@ export default function ContactsPage() {
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           {/* Email */}
                           <div className="relative group/tip">
-                            <button className="flex h-6 w-6 items-center justify-center rounded-md text-surface-500 hover:text-blue-400 hover:bg-blue-500/10 transition-all">
+                            <button
+                              onClick={() => contact.email && window.open(`mailto:${contact.email}`)}
+                              className={cn("flex h-6 w-6 items-center justify-center rounded-md transition-all",
+                                contact.email ? "text-surface-500 hover:text-blue-400 hover:bg-blue-500/10" : "text-surface-700 cursor-not-allowed")}>
                               <Mail size={12} />
                             </button>
-                            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover/tip:block whitespace-nowrap rounded-md bg-surface-700 px-2 py-1 text-[10px] text-surface-100 shadow-lg z-50">Send Email</span>
+                            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover/tip:block whitespace-nowrap rounded-md bg-surface-700 px-2 py-1 text-[10px] text-surface-100 shadow-lg z-50">
+                              {contact.email ? `Email ${contact.email}` : "No email"}
+                            </span>
                           </div>
                           {/* Call */}
                           <div className="relative group/tip">
-                            <button className="flex h-6 w-6 items-center justify-center rounded-md text-surface-500 hover:text-emerald-400 hover:bg-emerald-500/10 transition-all">
+                            <button
+                              onClick={() => contact.phone && window.open(`tel:${contact.phone}`)}
+                              className={cn("flex h-6 w-6 items-center justify-center rounded-md transition-all",
+                                contact.phone ? "text-surface-500 hover:text-emerald-400 hover:bg-emerald-500/10" : "text-surface-700 cursor-not-allowed")}>
                               <Phone size={12} />
                             </button>
-                            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover/tip:block whitespace-nowrap rounded-md bg-surface-700 px-2 py-1 text-[10px] text-surface-100 shadow-lg z-50">Call</span>
+                            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover/tip:block whitespace-nowrap rounded-md bg-surface-700 px-2 py-1 text-[10px] text-surface-100 shadow-lg z-50">
+                              {contact.phone ? `Call ${contact.phone}` : "No phone number"}
+                            </span>
                           </div>
                           {/* NPS Survey */}
                           <div className="relative group/tip">
