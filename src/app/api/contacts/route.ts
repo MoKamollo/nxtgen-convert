@@ -57,11 +57,23 @@ export async function GET(request: NextRequest) {
   }
 }
 
+function calcScore(data: { email?: string; phone?: string; jobTitle?: string; source?: string; status?: string }): number {
+  const statusBase: Record<string, number> = { vip: 90, customer: 70, prospect: 45, lead: 25, churned: 10 };
+  const sourceBonus: Record<string, number> = { referral: 15, organic: 10, event: 8, paid_ads: 5, cold_outreach: 2, other: 3 };
+  let score = statusBase[data.status ?? "lead"] ?? 25;
+  if (data.email) score += 10;
+  if (data.phone) score += 5;
+  if (data.jobTitle) score += 5;
+  score += sourceBonus[data.source ?? ""] ?? 0;
+  return Math.min(score, 100);
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const orgId = request.headers.get("x-tenant-id");
     if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    const score = calcScore({ email: body.email, phone: body.phone, jobTitle: body.jobTitle, source: body.source, status: body.status });
     const [contact] = await db.insert(contacts).values({
       organizationId: orgId,
       firstName: body.firstName,
@@ -72,6 +84,7 @@ export async function POST(request: NextRequest) {
       source: body.source,
       tags: body.tags || [],
       customFields: body.customFields || {},
+      score,
     }).returning();
     await triggerAutomation(orgId, "contact.created", { contactId: contact.id });
     return NextResponse.json({ data: contact }, { status: 201 });

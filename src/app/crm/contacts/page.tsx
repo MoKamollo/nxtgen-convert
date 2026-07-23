@@ -396,7 +396,7 @@ export default function ContactsPage() {
                       </td>
                       <td className="px-4 py-3">
                         <span className="text-xs text-surface-400">
-                          {contact.source}
+                          {contact.source ? contact.source.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase()) : "—"}
                         </span>
                       </td>
                       <td className="px-4 py-3">
