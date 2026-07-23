@@ -330,6 +330,7 @@ export default function ContactsPage() {
                   {filtered.map((contact) => (
                     <tr
                       key={contact.id}
+                      onClick={() => openEdit(contact)}
                       className={cn(
                         "group transition-colors cursor-pointer",
                         selected.includes(contact.id)
@@ -337,7 +338,7 @@ export default function ContactsPage() {
                           : "hover:bg-surface-800/30"
                       )}
                     >
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         <input
                           type="checkbox"
                           checked={selected.includes(contact.id)}
@@ -425,7 +426,7 @@ export default function ContactsPage() {
                           ))}
                         </div>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           {/* Email */}
                           <div className="relative group/tip">
