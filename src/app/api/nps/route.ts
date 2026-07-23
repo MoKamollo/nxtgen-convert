@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { npsResponses, contacts } from "@/db/schema";
-import { eq, isNotNull } from "drizzle-orm";
+import { eq, and, gte } from "drizzle-orm";
 
 export async function GET(request: NextRequest) {
   const orgId = request.headers.get("x-tenant-id");
   if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+
+  const windowStart = new Date();
+  windowStart.setDate(windowStart.getDate() - 90);
 
   const rows = await db
     .select({
@@ -20,8 +23,8 @@ export async function GET(request: NextRequest) {
       contactEmail: contacts.email,
     })
     .from(npsResponses)
-    .leftJoin(contacts, eq(npsResponses.contactId, contacts.id))
-    .where(eq(npsResponses.organizationId, orgId));
+    .leftJoin(contacts, and(eq(npsResponses.contactId, contacts.id), eq(contacts.organizationId, orgId)))
+    .where(and(eq(npsResponses.organizationId, orgId), gte(npsResponses.createdAt, windowStart)));
 
   const submitted = rows.filter(r => r.score !== null && r.submittedAt !== null);
   const promoters  = submitted.filter(r => (r.score ?? 0) >= 9).length;
