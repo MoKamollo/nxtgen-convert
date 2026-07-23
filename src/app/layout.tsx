@@ -2,18 +2,25 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "NxtGen Revenue OS — The Next Generation Business Operating System",
+  title: {
+    default: "NxtGen Convert",
+    template: "%s | NxtGen Convert",
+  },
   description:
-    "One unified platform to manage every customer, campaign, sale, and automation. AI-first revenue intelligence for scaling businesses.",
-  keywords: [
-    "CRM",
-    "revenue operations",
-    "marketing automation",
-    "sales pipeline",
-    "customer success",
-    "AI",
-    "SaaS",
-  ],
+    "The smart CRM and revenue platform for modern businesses. Manage contacts, deals, campaigns, and growth metrics in one place.",
+  keywords: ["CRM", "contacts", "deals", "campaigns", "NPS", "revenue", "NxtGen Convert"],
+  applicationName: "NxtGen Convert",
+  openGraph: {
+    title: "NxtGen Convert",
+    description: "Smart CRM and revenue platform for modern businesses.",
+    siteName: "NxtGen Convert",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "NxtGen Convert",
+    description: "Smart CRM and revenue platform for modern businesses.",
+  },
 };
 
 export default function RootLayout({

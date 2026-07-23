@@ -10,9 +10,9 @@ import CTA from "./_landing/CTA";
 import Footer from "./_landing/Footer";
 
 export const metadata = {
-  title: "NxtGen Convert — Revenue OS for Affiliate Marketers",
+  title: "NxtGen Convert — Smart CRM & Revenue Platform",
   description:
-    "Track affiliate links, funnels, email sequences, and contacts in one dashboard. Built for operators who run email-first and affiliate businesses.",
+    "Manage contacts, deals, campaigns, NPS, and growth metrics in one unified platform. Built for modern teams who move fast.",
 };
 
 export default function LandingPage() {
