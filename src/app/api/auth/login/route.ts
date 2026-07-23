@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { organizations } from "@/db/schema";
+import { organizations, users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { signSession, cookieHeader } from "@/lib/session";
 
@@ -39,7 +39,10 @@ export async function POST(request: NextRequest) {
     };
     const tenantId = rawTenantId.includes("-") ? rawTenantId : spaceIdToUUID(rawTenantId);
 
-    // Auto-create org in Convert DB if first login for this tenant
+    // Auto-create org in Convert DB if first login for this tenant.
+    // If tenantId not found, check whether this user already has an org (by email in users table)
+    // to avoid creating duplicate orgs when Space returns a different tenant_id format.
+    let resolvedTenantId = tenantId;
     const existing = await db
       .select({ id: organizations.id })
       .from(organizations)
@@ -47,15 +50,27 @@ export async function POST(request: NextRequest) {
       .limit(1);
 
     if (existing.length === 0) {
-      await db.insert(organizations).values({
-        id: tenantId,
-        name: name + "'s Workspace",
-        slug: rawTenantId,
-        plan: "starter",
-      });
+      // Look for an existing org via the user record (email match)
+      const existingUser = await db
+        .select({ organizationId: users.organizationId })
+        .from(users)
+        .where(eq(users.email, email.toLowerCase()))
+        .limit(1);
+
+      if (existingUser.length > 0 && existingUser[0].organizationId) {
+        // Reuse the existing org rather than creating a duplicate
+        resolvedTenantId = existingUser[0].organizationId;
+      } else {
+        await db.insert(organizations).values({
+          id: tenantId,
+          name: name + "'s Workspace",
+          slug: rawTenantId,
+          plan: "starter",
+        });
+      }
     }
 
-    const token = await signSession({ userId, tenantId, email, name, role, plan });
+    const token = await signSession({ userId, tenantId: resolvedTenantId, email, name, role, plan });
 
     const next = request.nextUrl.searchParams.get("next") ?? "/dashboard";
     const response = NextResponse.json({ ok: true, redirect: next });

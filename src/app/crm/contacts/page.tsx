@@ -465,7 +465,7 @@ export default function ContactsPage() {
                 <p className="text-xs text-surface-500 mt-1">
                   Try adjusting your search or filters
                 </p>
-                <Button variant="outline" size="sm" className="mt-4" icon={Plus}>
+                <Button variant="outline" size="sm" className="mt-4" icon={Plus} onClick={openCreate}>
                   Add Contact
                 </Button>
               </div>
