@@ -13,7 +13,7 @@ import {
   Grid3X3, List, Users, Tag, Building2, TrendingUp,
   ArrowUpDown, Pencil, BarChart2,
 } from "lucide-react";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { X, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 
@@ -32,7 +32,7 @@ const filterOptions = [
   { value: "churned", label: "Churned" },
 ];
 
-export default function ContactsPage() {
+function ContactsPageInner() {
   const searchParams = useSearchParams();
   const [view, setView] = useState<"table" | "grid">("table");
   const [search, setSearch] = useState("");
@@ -758,5 +758,13 @@ export default function ContactsPage() {
         </div>
       )}
     </AppLayout>
+  );
+}
+
+export default function ContactsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ContactsPageInner />
+    </Suspense>
   );
 }
