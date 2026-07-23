@@ -27,18 +27,33 @@ function matchesFilters(contact: { status: string | null; source: string | null;
   return true;
 }
 
-function buildEmailHtml(campaign: { name: string; subject: string | null; content: unknown }, firstName: string, lastName: string | null): string {
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://convert.nxtgen-stack.com";
+
+function injectTracking(html: string, campaignId: string): string {
+  // Wrap all href links with click tracking redirect
+  const withClicks = html.replace(
+    /href="(https?:\/\/[^"]+)"/gi,
+    (_, url) => `href="${APP_URL}/api/track/click?c=${campaignId}&url=${encodeURIComponent(url)}"`
+  );
+  // Inject open-tracking pixel just before </body>
+  const pixel = `<img src="${APP_URL}/api/track/open?c=${campaignId}" width="1" height="1" style="display:none" alt="" />`;
+  return withClicks.includes("</body>")
+    ? withClicks.replace("</body>", `${pixel}</body>`)
+    : withClicks + pixel;
+}
+
+function buildEmailHtml(campaign: { id: string; name: string; subject: string | null; content: unknown }, firstName: string, lastName: string | null): string {
   const fullName = `${firstName}${lastName ? " " + lastName : ""}`;
   // Use campaign content if it's a stored HTML string (H10b)
   const rawContent = typeof campaign.content === "string" ? campaign.content : null;
+  let html: string;
   if (rawContent?.trim()) {
-    return rawContent
+    html = rawContent
       .replace(/\{\{name\}\}/gi, fullName)
       .replace(/\{\{first_name\}\}/gi, firstName)
       .replace(/\{\{last_name\}\}/gi, lastName ?? "");
-  }
-  // Generic fallback
-  return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#0a0f1e">
+  } else {
+    html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#0a0f1e">
 <div style="font-family:Inter,sans-serif;max-width:600px;margin:0 auto;padding:40px 24px;background:#0a0f1e;color:#e2e8f0">
   <h2 style="font-size:22px;font-weight:700;color:#f8fafc;margin-bottom:16px">${campaign.subject ?? campaign.name}</h2>
   <p style="font-size:15px;color:#94a3b8;margin-bottom:20px">Hi ${fullName},</p>
@@ -48,6 +63,8 @@ function buildEmailHtml(campaign: { name: string; subject: string | null; conten
     <a href="#" style="color:#6366f1;text-decoration:none">Unsubscribe</a>
   </p>
 </div></body></html>`;
+  }
+  return injectTracking(html, campaign.id);
 }
 
 export async function POST(
@@ -117,7 +134,7 @@ export async function POST(
             from,
             to: r.email,
             subject: campaign.subject ?? campaign.name,
-            html: buildEmailHtml(campaign, r.firstName, r.lastName),
+            html: buildEmailHtml({ ...campaign, id }, r.firstName, r.lastName),
           });
           sent++;
         } catch { bounced++; }
@@ -126,7 +143,9 @@ export async function POST(
       sent = recipients.length;
     }
 
-    const stats = { sent, delivered: sent, opened: 0, clicked: 0, bounced, unsubscribed: 0, revenue: 0 };
+    // Preserve opened/clicked — they accumulate as recipients open/click after delivery
+    const prevStats = (campaign.stats ?? {}) as Record<string, number>;
+    const stats = { sent, delivered: sent, opened: prevStats.opened ?? 0, clicked: prevStats.clicked ?? 0, bounced, unsubscribed: 0, revenue: 0 };
     await db.update(campaigns).set({
       status: "sent", stats, updatedAt: new Date(),
     }).where(eq(campaigns.id, id));
