@@ -146,7 +146,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ inserted, skipped: skipped.length, total: toInsert.length + skipped.length });
   } catch (err) {
-    console.error(err);
     console.error("[contacts/import]", err);
     return NextResponse.json({ error: "Failed to process CSV" }, { status: 500 });
   }

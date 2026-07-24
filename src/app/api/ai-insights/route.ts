@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { contacts, deals, tasks } from "@/db/schema";
-import { eq, and, desc, lt } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 
 export async function GET(request: NextRequest) {
   const orgId = request.headers.get("x-tenant-id");
@@ -9,9 +9,21 @@ export async function GET(request: NextRequest) {
 
   try {
     const [contactRows, dealRows, taskRows] = await Promise.all([
-      db.select().from(contacts).where(eq(contacts.organizationId, orgId)),
-      db.select().from(deals).where(eq(deals.organizationId, orgId)),
-      db.select().from(tasks).where(and(eq(tasks.organizationId, orgId))),
+      db.select({
+        id: contacts.id, firstName: contacts.firstName, lastName: contacts.lastName,
+        status: contacts.status, score: contacts.score,
+        lastContactedAt: contacts.lastContactedAt, updatedAt: contacts.updatedAt,
+      }).from(contacts).where(eq(contacts.organizationId, orgId))
+        .orderBy(desc(contacts.score)).limit(500),
+      db.select({
+        id: deals.id, name: deals.name, stage: deals.stage,
+        contactId: deals.contactId, value: deals.value, updatedAt: deals.updatedAt,
+      }).from(deals).where(eq(deals.organizationId, orgId))
+        .orderBy(desc(deals.updatedAt)).limit(200),
+      db.select({
+        title: tasks.title, status: tasks.status, dueDate: tasks.dueDate,
+      }).from(tasks).where(eq(tasks.organizationId, orgId))
+        .orderBy(tasks.dueDate).limit(200),
     ]);
 
     const insights: {

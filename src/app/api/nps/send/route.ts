@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
 </body>
 </html>`,
       });
-    } catch { /* email failure doesn't block token creation */ }
+    } catch (err) { console.error("[nps/send] email failed:", err); }
   }
 
   return NextResponse.json({ ok: true, token, surveyUrl });

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { contacts, deals, revenueMetrics, workflows, tickets, marketingSpend, npsResponses } from "@/db/schema";
-import { eq, desc, sql, and, gte, isNotNull } from "drizzle-orm";
+import { eq, desc, sql, and, gte, isNotNull, count } from "drizzle-orm";
 
 const STAGE_COLORS: Record<string, string> = {
   prospecting:   "#94a3b8",
@@ -32,12 +32,23 @@ export async function GET(request: NextRequest) {
     // NPS always capped at 90 days for freshness (W4)
     const npsWindowStart = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
 
-    const [contactRows, dealRows, metrics, workflowRows, ticketRows, spendRows, npsRows] = await Promise.all([
-      db.select().from(contacts).where(eq(contacts.organizationId, orgId)),
-      db.select().from(deals).where(eq(deals.organizationId, orgId)),
+    const [contactRows, dealRows, metrics, workflowRows, ticketRows, spendRows, npsRows, totalContactsResult] = await Promise.all([
+      db.select({
+        id: contacts.id, status: contacts.status, source: contacts.source,
+        createdAt: contacts.createdAt, updatedAt: contacts.updatedAt,
+      }).from(contacts).where(eq(contacts.organizationId, orgId))
+        .orderBy(desc(contacts.createdAt)).limit(2000),
+      db.select({
+        id: deals.id, stage: deals.stage, value: deals.value,
+        contactId: deals.contactId, wonAt: deals.wonAt, lostAt: deals.lostAt,
+        updatedAt: deals.updatedAt,
+      }).from(deals).where(eq(deals.organizationId, orgId))
+        .orderBy(desc(deals.updatedAt)).limit(2000),
       db.select().from(revenueMetrics).where(eq(revenueMetrics.organizationId, orgId)).orderBy(desc(revenueMetrics.date)).limit(13),
-      db.select().from(workflows).where(eq(workflows.organizationId, orgId)),
-      db.select().from(tickets).where(eq(tickets.organizationId, orgId)),
+      db.select({ id: workflows.id, status: workflows.status, enrolledCount: workflows.enrolledCount })
+        .from(workflows).where(eq(workflows.organizationId, orgId)).limit(200),
+      db.select({ id: tickets.id, status: tickets.status })
+        .from(tickets).where(eq(tickets.organizationId, orgId)).limit(500),
       db.select().from(marketingSpend).where(eq(marketingSpend.organizationId, orgId)),
       db.select({ score: npsResponses.score }).from(npsResponses)
         .where(and(
@@ -46,7 +57,10 @@ export async function GET(request: NextRequest) {
           isNotNull(npsResponses.score),
           gte(npsResponses.submittedAt, npsWindowStart),
         )),
+      db.select({ total: count() }).from(contacts).where(eq(contacts.organizationId, orgId)),
     ]);
+
+    const totalContactsCount = totalContactsResult[0]?.total ?? contactRows.length;
 
     // ── KPI derivations ────────────────────────────────────────────────────────
 
@@ -75,7 +89,7 @@ export async function GET(request: NextRequest) {
     const enrolledCount = activeWorkflowRows.reduce((s, w) => s + (w.enrolledCount ?? 0), 0);
 
     const churnedContacts = contactRows.filter(c => c.status === "churned").length;
-    const churnRate = contactRows.length > 0 ? Math.round((churnedContacts / contactRows.length) * 1000) / 10 : 0;
+    const churnRate = totalContactsCount > 0 ? Math.round((churnedContacts / totalContactsCount) * 1000) / 10 : 0;
 
     // ── CAC ──────────────────────────────────────────────────────────────────────
     const thisMonthSpend = spendRows
@@ -118,7 +132,7 @@ export async function GET(request: NextRequest) {
     const kpis = {
       mrr:             { value: mrr,                         change: pct(mrr, prevMrr),         trend: mrr >= prevMrr ? "up" : "down" },
       arr:             { value: arr,                         change: 0,                          trend: "up" },
-      totalContacts:   { value: contactRows.length,          change: 0,                          trend: "up" },
+      totalContacts:   { value: totalContactsCount,           change: 0,                          trend: "up" },
       activeDeals:     { value: activeDeals.length,          change: 0,                          trend: "up" },
       pipelineValue:   { value: pipelineValue,               change: 0,                          trend: "up" },
       avgDealSize:     { value: Math.round(avgDealSize),     change: 0,                          trend: "up" },
@@ -185,7 +199,7 @@ export async function GET(request: NextRequest) {
       const src = c.source ?? "Unknown";
       sourceCounts[src] = (sourceCounts[src] ?? 0) + 1;
     }
-    const total = contactRows.length || 1;
+    const total = totalContactsCount || 1;
     const contactSources = Object.entries(sourceCounts)
       .sort(([,a],[,b]) => b - a)
       .map(([name, count], i) => ({
@@ -199,7 +213,7 @@ export async function GET(request: NextRequest) {
 
     const statusCount = (s: string) => contactRows.filter(c => c.status === s).length;
     const conversionFunnel = [
-      { stage: "Total Contacts",  count: contactRows.length },
+      { stage: "Total Contacts",  count: totalContactsCount },
       { stage: "Leads",           count: contactRows.filter(c => c.status === "lead").length },
       { stage: "Prospects",       count: statusCount("prospect") },
       { stage: "Customers",       count: statusCount("customer") + statusCount("vip") },
