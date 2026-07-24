@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { deals, contacts, companies, users } from "@/db/schema";
 import { eq, and, ilike, or } from "drizzle-orm";
+import { dealStageEnum } from "@/db/schema";
+
+const VALID_STAGES = dealStageEnum.enumValues;
 
 export async function GET(request: NextRequest) {
   try {
@@ -35,9 +38,8 @@ export async function GET(request: NextRequest) {
     const stageParam  = request.nextUrl.searchParams.get("stage");
 
     const conditions = [eq(deals.organizationId, orgId)];
-    const validStages = ["prospecting","qualification","proposal","negotiation","closed_won","closed_lost"] as const;
-    if (stageParam && validStages.includes(stageParam as typeof validStages[number])) {
-      conditions.push(eq(deals.stage, stageParam as typeof validStages[number]));
+    if (stageParam && VALID_STAGES.includes(stageParam as typeof VALID_STAGES[number])) {
+      conditions.push(eq(deals.stage, stageParam as typeof VALID_STAGES[number]));
     }
     if (searchParam) {
       conditions.push(or(ilike(deals.name, `%${searchParam}%`))!);

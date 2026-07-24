@@ -1,6 +1,12 @@
-const SECRET = process.env.SPACE_SSO_SECRET ?? "dev-secret-change-in-prod";
 const COOKIE_NAME = "convert_sess";
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
+const SESSION_TTL_SECONDS = COOKIE_MAX_AGE;
+
+function getSecret(): string {
+  if (process.env.SPACE_SSO_SECRET) return process.env.SPACE_SSO_SECRET;
+  if (process.env.NODE_ENV === "production") throw new Error("SPACE_SSO_SECRET environment variable is required in production");
+  return "dev-secret-change-in-prod";
+}
 
 export interface SessionPayload {
   userId: string;
@@ -18,7 +24,7 @@ function b64url(str: string): string {
 async function getKey(): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(SECRET),
+    new TextEncoder().encode(getSecret()),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign", "verify"]
@@ -34,7 +40,8 @@ async function sign(header: string, body: string): Promise<string> {
 
 export async function signSession(payload: SessionPayload): Promise<string> {
   const header = b64url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-  const body = b64url(JSON.stringify({ ...payload, iat: Math.floor(Date.now() / 1000) }));
+  const now = Math.floor(Date.now() / 1000);
+  const body = b64url(JSON.stringify({ ...payload, iat: now, exp: now + SESSION_TTL_SECONDS }));
   const sig = await sign(header, body);
   return `${header}.${body}.${sig}`;
 }
@@ -45,7 +52,9 @@ export async function verifySession(token: string): Promise<SessionPayload | nul
     if (!header || !body || !sig) return null;
     const expected = await sign(header, body);
     if (expected !== sig) return null;
-    return JSON.parse(Buffer.from(body, "base64url").toString());
+    const decoded = JSON.parse(Buffer.from(body, "base64url").toString());
+    if (decoded.exp && decoded.exp < Math.floor(Date.now() / 1000)) return null;
+    return decoded as SessionPayload;
   } catch {
     return null;
   }

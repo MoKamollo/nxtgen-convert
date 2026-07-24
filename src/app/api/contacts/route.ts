@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { contacts, companies, users, deals } from "@/db/schema";
+import { contacts, companies, users, deals, contactStatusEnum } from "@/db/schema";
 import { eq, sql, and, ilike, or } from "drizzle-orm";
 import { triggerAutomation } from "@/lib/automation";
+
+const VALID_STATUSES = contactStatusEnum.enumValues;
 
 export async function GET(request: NextRequest) {
   try {
@@ -32,12 +34,14 @@ export async function GET(request: NextRequest) {
 
     const searchParam = request.nextUrl.searchParams.get("search");
     const statusParam = request.nextUrl.searchParams.get("status");
+    const page        = Math.max(1, parseInt(request.nextUrl.searchParams.get("page") ?? "1", 10));
+    const pageSize    = Math.min(200, Math.max(1, parseInt(request.nextUrl.searchParams.get("limit") ?? "100", 10)));
+    const offset      = (page - 1) * pageSize;
 
     const conditions = [eq(contacts.organizationId, orgId)];
     if (statusParam && statusParam !== "all") {
-      const validStatuses = ["lead", "prospect", "customer", "churned", "vip"] as const;
-      if (validStatuses.includes(statusParam as typeof validStatuses[number])) {
-        conditions.push(eq(contacts.status, statusParam as typeof validStatuses[number]));
+      if (VALID_STATUSES.includes(statusParam as typeof VALID_STATUSES[number])) {
+        conditions.push(eq(contacts.status, statusParam as typeof VALID_STATUSES[number]));
       }
     }
     if (searchParam) {
@@ -51,7 +55,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const results = await query.where(and(...conditions)).limit(200);
+    const results = await query.where(and(...conditions)).limit(pageSize).offset(offset);
 
     // Aggregate closed_won deal value per contact for accurate revenue
     const revenueRows = await db
@@ -103,14 +107,20 @@ function calcScore(data: { email?: string; phone?: string; jobTitle?: string; so
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
     const orgId = request.headers.get("x-tenant-id");
     if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    const body = await request.json();
+
+    if (!body.firstName?.trim()) return NextResponse.json({ error: "firstName is required" }, { status: 400 });
+    if (body.firstName.length > 100) return NextResponse.json({ error: "firstName too long (max 100 chars)" }, { status: 400 });
+    if (body.lastName && body.lastName.length > 100) return NextResponse.json({ error: "lastName too long (max 100 chars)" }, { status: 400 });
+    if (body.status && !VALID_STATUSES.includes(body.status)) return NextResponse.json({ error: `Invalid status. Valid: ${VALID_STATUSES.join(", ")}` }, { status: 400 });
+
     const score = calcScore({ email: body.email, phone: body.phone, jobTitle: body.jobTitle, source: body.source, status: body.status });
     const [contact] = await db.insert(contacts).values({
       organizationId: orgId,
-      firstName: body.firstName,
-      lastName: body.lastName,
+      firstName: body.firstName.trim().slice(0, 100),
+      lastName: body.lastName?.trim().slice(0, 100),
       email: body.email,
       phone: body.phone,
       status: body.status || "lead",
@@ -122,7 +132,7 @@ export async function POST(request: NextRequest) {
     await triggerAutomation(orgId, "contact.created", { contactId: contact.id });
     return NextResponse.json({ data: contact }, { status: 201 });
   } catch (error) {
-    console.error(error);
+    console.error("[contacts POST]", error);
     return NextResponse.json({ error: "Failed to create contact" }, { status: 500 });
   }
 }

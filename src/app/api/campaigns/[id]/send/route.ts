@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { campaigns, contacts } from "@/db/schema";
 import { and, eq, isNotNull } from "drizzle-orm";
+import { makeUnsubToken } from "@/app/api/unsubscribe/route";
 
 type AudienceFilters = {
   status?: string | string[];
@@ -42,16 +43,19 @@ function injectTracking(html: string, campaignId: string): string {
     : withClicks + pixel;
 }
 
-function buildEmailHtml(campaign: { id: string; name: string; subject: string | null; content: unknown }, firstName: string, lastName: string | null): string {
+function buildEmailHtml(campaign: { id: string; name: string; subject: string | null; content: unknown }, firstName: string, lastName: string | null, contactEmail: string): string {
   const fullName = `${firstName}${lastName ? " " + lastName : ""}`;
-  // Use campaign content if it's a stored HTML string (H10b)
+  const unsubToken = makeUnsubToken(campaign.id, contactEmail.toLowerCase());
+  const unsubUrl = `${APP_URL}/api/unsubscribe?c=${campaign.id}&e=${encodeURIComponent(contactEmail)}&t=${unsubToken}`;
+
   const rawContent = typeof campaign.content === "string" ? campaign.content : null;
   let html: string;
   if (rawContent?.trim()) {
     html = rawContent
       .replace(/\{\{name\}\}/gi, fullName)
       .replace(/\{\{first_name\}\}/gi, firstName)
-      .replace(/\{\{last_name\}\}/gi, lastName ?? "");
+      .replace(/\{\{last_name\}\}/gi, lastName ?? "")
+      .replace(/\{\{unsubscribe_url\}\}/gi, unsubUrl);
   } else {
     html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#0a0f1e">
 <div style="font-family:Inter,sans-serif;max-width:600px;margin:0 auto;padding:40px 24px;background:#0a0f1e;color:#e2e8f0">
@@ -60,7 +64,7 @@ function buildEmailHtml(campaign: { id: string; name: string; subject: string | 
   <p style="font-size:14px;color:#cbd5e1;line-height:1.7">This message was sent to you as part of the <strong style="color:#f8fafc">${campaign.name}</strong> campaign.</p>
   <hr style="border:none;border-top:1px solid #1e293b;margin:32px 0"/>
   <p style="font-size:12px;color:#475569">You're receiving this email because you're in our system.
-    <a href="#" style="color:#6366f1;text-decoration:none">Unsubscribe</a>
+    <a href="${unsubUrl}" style="color:#6366f1;text-decoration:none">Unsubscribe</a>
   </p>
 </div></body></html>`;
   }
@@ -101,12 +105,15 @@ export async function POST(
       .from(contacts)
       .where(and(eq(contacts.organizationId, orgId), isNotNull(contacts.email)));
 
-    // Apply audienceFilters (H10a)
+    // Always exclude unsubscribed contacts
+    const eligible = allContacts.filter(c => !(c.tags as string[] ?? []).includes("unsubscribed"));
+
+    // Apply audienceFilters
     const filters = (campaign.audienceFilters ?? {}) as AudienceFilters;
     const hasFilters = Object.keys(filters).length > 0;
     const recipients = hasFilters
-      ? allContacts.filter((c) => matchesFilters(c, filters))
-      : allContacts;
+      ? eligible.filter((c) => matchesFilters(c, filters))
+      : eligible;
 
     if (recipients.length === 0) {
       return NextResponse.json({ error: "No contacts matched the campaign audience filters" }, { status: 400 });
@@ -134,10 +141,10 @@ export async function POST(
             from,
             to: r.email,
             subject: campaign.subject ?? campaign.name,
-            html: buildEmailHtml({ ...campaign, id }, r.firstName, r.lastName),
+            html: buildEmailHtml({ ...campaign, id }, r.firstName, r.lastName, r.email),
           });
           sent++;
-        } catch { bounced++; }
+        } catch (err) { console.error(`[campaign-send] failed for ${r.email}:`, err); bounced++; }
       }
     } else {
       sent = recipients.length;

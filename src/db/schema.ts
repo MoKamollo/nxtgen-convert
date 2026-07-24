@@ -158,7 +158,7 @@ export const contacts = pgTable(
     avatar: text("avatar"),
     status: contactStatusEnum("status").default("lead"),
     source: text("source"),
-    companyId: uuid("company_id"),
+    companyId: uuid("company_id").references(() => companies.id),
     jobTitle: text("job_title"),
     department: text("department"),
     website: text("website"),

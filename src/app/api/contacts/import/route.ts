@@ -106,10 +106,13 @@ export async function POST(request: NextRequest) {
         if (field && val) (record as Record<string, string>)[field] = val;
       });
       if (!record.firstName) { skipped.push(i + 1); continue; }
-      if (record.status && !VALID_STATUSES.includes(record.status.toLowerCase())) {
-        record.status = "lead" as ContactStatus;
-      } else if (record.status) {
-        record.status = record.status.toLowerCase() as ContactStatus;
+      if (record.status) {
+        const normalized = record.status.toLowerCase();
+        if (!VALID_STATUSES.includes(normalized)) {
+          skipped.push(i + 1); // reject row — don't silently coerce invalid status
+          continue;
+        }
+        record.status = normalized as ContactStatus;
       }
       toInsert.push(record as ContactRow);
     }
@@ -144,6 +147,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ inserted, skipped: skipped.length, total: toInsert.length + skipped.length });
   } catch (err) {
     console.error(err);
+    console.error("[contacts/import]", err);
     return NextResponse.json({ error: "Failed to process CSV" }, { status: 500 });
   }
 }
