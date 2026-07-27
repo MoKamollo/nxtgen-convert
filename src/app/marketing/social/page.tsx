@@ -19,9 +19,9 @@ import {
 import { apiUrl } from "@/lib/org";
 import {
   CalendarDays,
-  Facebook,
-  Instagram,
-  Linkedin,
+  Camera,
+  Globe,
+  Briefcase,
   List,
   Plus,
   Send,
@@ -38,11 +38,11 @@ type Post = {
   mediaUrls: string[] | null;
   createdAt: string;
 };
-const icons: Record<string, typeof Twitter> = {
+const icons: Record<string, typeof X> = {
   twitter: X,
-  linkedin: Linkedin,
-  facebook: Facebook,
-  instagram: Instagram,
+  linkedin: Briefcase,
+  facebook: Globe,
+  instagram: Camera,
 };
 const blank = {
   content: "",
