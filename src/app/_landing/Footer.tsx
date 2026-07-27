@@ -12,8 +12,8 @@ const LINKS = {
     { label: "Create account", href: "/sign-up" },
   ],
   Legal: [
-    { label: "Privacy policy", href: "/privacy" },
-    { label: "Terms of service", href: "/terms" },
+    { label: "Transparency", href: "https://nxtgen-stack.com/transparency-affiliate-disclosure/" },
+    { label: "Legal inquiries", href: "mailto:hello@nxtgen-stack.com" },
   ],
 };
 

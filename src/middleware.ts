@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession, COOKIE_NAME } from "@/lib/session";
 
-const PUBLIC = ["/login", "/sign-up", "/auth/callback", "/api/auth/login", "/api/auth/logout", "/api/auth/register", "/api/auth/google", "/api/auth/verified", "/survey", "/api/nps/submit"];
+const PUBLIC = ["/login", "/sign-up", "/forgot-password", "/auth/callback", "/api/auth/login", "/api/auth/logout", "/api/auth/register", "/api/auth/google", "/api/auth/verified", "/api/auth/forgot-password", "/survey", "/api/nps/submit"];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -14,7 +14,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  if (PUBLIC.some((p) => pathname.startsWith(p))) {
+  if (
+    PUBLIC.some((p) => pathname.startsWith(p)) ||
+    /^\/api\/forms\/[^/]+\/(submit|embed)$/.test(pathname) ||
+    /^\/api\/broadcasts\/[^/]+\/dispatch$/.test(pathname)
+  ) {
     return NextResponse.next();
   }
 

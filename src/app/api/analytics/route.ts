@@ -20,8 +20,8 @@ export async function GET(request: NextRequest) {
 
   try {
     const now = new Date();
-    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const currentMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 
     // Period window for deal/contact aggregations
     const periodParam = request.nextUrl.searchParams.get("period") ?? "30d";
@@ -119,7 +119,7 @@ export async function GET(request: NextRequest) {
     if (mrr === 0 && wonDeals.length > 0) {
       const thisMonthWon = wonDeals.filter(d => {
         const wonAt = d.wonAt ?? d.updatedAt;
-        return wonAt && new Date(wonAt).getMonth() === now.getMonth() && new Date(wonAt).getFullYear() === now.getFullYear();
+        return wonAt && new Date(wonAt).getUTCMonth() === now.getUTCMonth() && new Date(wonAt).getUTCFullYear() === now.getUTCFullYear();
       });
       mrr = thisMonthWon.reduce((s, d) => s + parseFloat(d.value ?? "0"), 0);
       arr = mrr * 12;

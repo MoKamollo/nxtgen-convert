@@ -1,5 +1,6 @@
 "use client";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { ConfirmAction } from "@/components/modules/ModulePrimitives";
 import { Badge, StatusBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
@@ -50,6 +51,9 @@ export default function DealsPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("create") === "true") setShowModal(true);
+  }, []);
 
   const openEdit = (deal: Deal) => {
     setEditDeal(deal);
@@ -109,7 +113,6 @@ export default function DealsPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this deal?")) return;
     setAllDeals(prev => prev.filter(d => d.id !== id));
     await fetch(apiUrl(`/api/deals/${id}`), { method: "DELETE" });
   };
@@ -212,9 +215,7 @@ export default function DealsPage() {
                                   <button onClick={() => openEdit(deal)} className="text-surface-600 hover:text-brand-400 transition-colors">
                                     <Pencil size={12} />
                                   </button>
-                                  <button onClick={() => handleDelete(deal.id)} className="text-surface-600 hover:text-red-400 transition-colors">
-                                    <X size={13} />
-                                  </button>
+                                  <ConfirmAction onConfirm={() => handleDelete(deal.id)} />
                                 </div>
                               </div>
                               <p className="text-lg font-bold text-surface-50 mb-2">{formatCurrency(deal.value)}</p>
@@ -327,9 +328,7 @@ export default function DealsPage() {
                             <button onClick={() => openEdit(deal)} className="flex h-6 w-6 items-center justify-center rounded-md text-surface-500 hover:text-brand-400 hover:bg-brand-500/10 transition-all">
                               <Pencil size={12} />
                             </button>
-                            <button onClick={() => handleDelete(deal.id)} className="flex h-6 w-6 items-center justify-center rounded-md text-surface-500 hover:text-red-400 hover:bg-red-500/10 transition-all">
-                              <X size={14} />
-                            </button>
+                            <ConfirmAction onConfirm={() => handleDelete(deal.id)} />
                           </div>
                         </td>
                       </tr>

@@ -116,6 +116,8 @@ function LoginForm() {
           </div>
         </div>
 
+        <div className="flex justify-end -mt-1"><a href="/forgot-password" className="text-xs text-[#7B6EF6] hover:underline">Forgot password?</a></div>
+
         <button type="submit" disabled={loading}
           className="w-full h-10 rounded-lg bg-gradient-to-r from-[#7B6EF6] to-[#3B9EFF] text-sm font-semibold text-white flex items-center justify-center gap-2 hover:opacity-90 transition-opacity disabled:opacity-50 mt-2">
           {loading ? "Signing in…" : <><span>Sign in</span><ArrowRight size={14} /></>}

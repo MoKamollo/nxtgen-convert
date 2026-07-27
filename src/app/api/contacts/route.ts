@@ -55,7 +55,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const results = await query.where(and(...conditions)).limit(pageSize).offset(offset);
+    const whereClause = and(...conditions);
+    const [results, countRows] = await Promise.all([
+      query.where(whereClause).limit(pageSize).offset(offset),
+      db.select({ total: sql<number>`count(*)` }).from(contacts).where(whereClause),
+    ]);
 
     // Aggregate closed_won deal value per contact for accurate revenue
     const revenueRows = await db
@@ -87,7 +91,7 @@ export async function GET(request: NextRequest) {
       revenue: revenueMap.get(r.id) ?? 0,
     }));
 
-    return NextResponse.json({ data: shaped, total: shaped.length });
+    return NextResponse.json({ data: shaped, total: Number(countRows[0]?.total ?? 0), page, limit: pageSize });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Failed to fetch contacts" }, { status: 500 });

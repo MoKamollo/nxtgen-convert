@@ -33,6 +33,11 @@ export default function DashboardPage() {
   const [kpis, setKpis] = useState(DEFAULT_KPIS);
   const [period, setPeriod] = useState("30d");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [quota, setQuota] = useState<Array<{ userId: string; name: string; avatar: string | null; wonDeals: number; wonValue: number; quota: number }>>([]);
+
+  useEffect(() => {
+    fetch(apiUrl("/api/team/quota")).then(r => r.json()).then(j => setQuota(j.data ?? [])).catch(() => {});
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -148,11 +153,7 @@ export default function DashboardPage() {
           <ConversionFunnelChart />
           <div className="rounded-xl border border-surface-800 bg-surface-900/50 p-5">
             <h3 className="text-sm font-semibold text-surface-200 mb-4">Team Quota Attainment</h3>
-            <div className="flex flex-col items-center justify-center py-8 text-center gap-2">
-              <Target size={24} className="text-surface-600" />
-              <p className="text-xs text-surface-500">No team data yet.</p>
-              <p className="text-xs text-surface-600">Add deals and assign owners to track quota.</p>
-            </div>
+            {quota.length === 0 ? <div className="flex flex-col items-center justify-center py-8 text-center gap-2"><Target size={24} className="text-surface-600"/><p className="text-xs text-surface-500">No team quota data yet.</p><p className="text-xs text-surface-600">Set a quota in each user's preferences and assign won deals.</p></div> : <div className="space-y-4">{quota.slice(0,6).map(member => { const attainment = member.quota > 0 ? Math.min(100, member.wonValue / member.quota * 100) : 0; return <div key={member.userId}><div className="mb-1.5 flex items-center justify-between text-xs"><span className="font-medium text-surface-300">{member.name}</span><span className="text-surface-500">{member.quota > 0 ? `${attainment.toFixed(0)}%` : "No quota"}</span></div><div className="h-2 overflow-hidden rounded-full bg-surface-800"><div className="h-full rounded-full bg-brand-500" style={{width:`${attainment}%`}}/></div><div className="mt-1 flex justify-between text-[10px] text-surface-600"><span>{formatCurrency(member.wonValue)} won</span><span>{member.wonDeals} deals</span></div></div>})}</div>}
           </div>
         </div>
 

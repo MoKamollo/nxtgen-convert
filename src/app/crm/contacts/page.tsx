@@ -5,6 +5,7 @@ import { Badge, StatusBadge } from "@/components/ui/Badge";
 import { Button, IconButton } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
 import { Input, Select } from "@/components/ui/Input";
+import { ConfirmAction, Toast } from "@/components/modules/ModulePrimitives";
 import { formatCurrency, timeAgo, cn } from "@/lib/utils";
 import { apiUrl } from "@/lib/org";
 import {
@@ -46,6 +47,8 @@ function ContactsPageInner() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ firstName:"", lastName:"", email:"", phone:"", status:"lead", jobTitle:"", source:"" });
   const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
   const PAGE_SIZE = 25;
   const [showImport, setShowImport] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -55,16 +58,31 @@ function ContactsPageInner() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [npsSending, setNpsSending] = useState<string | null>(null);
   const [npsSuccess, setNpsSuccess] = useState<string | null>(null);
+  const [npsError, setNpsError] = useState("");
 
   const load = useCallback(() => {
     setLoading(true);
-    fetch(apiUrl("/api/contacts"))
+    fetch(apiUrl("/api/contacts", { page: "1", limit: String(PAGE_SIZE) }))
       .then((r) => r.json())
-      .then((j) => { setAllContacts(j.data ?? []); setLoading(false); })
+      .then((j) => { setAllContacts(j.data ?? []); setTotalCount(j.total ?? 0); setPage(1); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
 
+  const loadMore = async () => {
+    if (loadingMore || allContacts.length >= totalCount) return;
+    setLoadingMore(true);
+    const nextPage = page + 1;
+    try {
+      const response = await fetch(apiUrl("/api/contacts", { page: String(nextPage), limit: String(PAGE_SIZE) }));
+      const json = await response.json();
+      if (response.ok) { setAllContacts(prev => [...prev, ...(json.data ?? [])]); setTotalCount(json.total ?? totalCount); setPage(nextPage); }
+    } finally { setLoadingMore(false); }
+  };
+
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("create") === "true") setShowModal(true);
+  }, []);
 
   const openCreate = () => {
     setEditContact(null);
@@ -103,7 +121,7 @@ function ContactsPageInner() {
   };
 
   const handleSendNps = async (contactId: string, email: string) => {
-    if (!email) { alert("This contact has no email — cannot send NPS survey."); return; }
+    if (!email) { setNpsError("This contact has no email address."); return; }
     setNpsSending(contactId);
     const res = await fetch(apiUrl("/api/nps/send"), {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -115,12 +133,11 @@ function ContactsPageInner() {
       setTimeout(() => setNpsSuccess(c => c === contactId ? null : c), 3000);
     } else {
       const j = await res.json();
-      alert(j.error ?? "Failed to send NPS survey");
+      setNpsError(j.error ?? "Failed to send NPS survey");
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this contact?")) return;
     await fetch(apiUrl(`/api/contacts/${id}`), { method: "DELETE" });
     setAllContacts(prev => prev.filter(c => c.id !== id));
   };
@@ -151,16 +168,7 @@ function ContactsPageInner() {
     return matchesSearch && matchesStatus;
   });
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
-  const paginated = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
-
-  const getPageNumbers = () => {
-    if (totalPages <= 5) return Array.from({ length: totalPages }, (_, i) => i + 1);
-    if (currentPage <= 3) return [1, 2, 3, 4, "...", totalPages];
-    if (currentPage >= totalPages - 2) return [1, "...", totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
-    return [1, "...", currentPage - 1, currentPage, currentPage + 1, "...", totalPages];
-  };
+  const paginated = filtered;
 
   const toggleSelect = (id: string) => {
     setSelected((s) =>
@@ -186,7 +194,7 @@ function ContactsPageInner() {
               Contacts
             </h1>
             <p className="text-sm text-surface-500 mt-0.5">
-              {allContacts.length.toLocaleString()} total contacts · {allContacts.filter(c => c.status === "customer").length} customers
+              {totalCount.toLocaleString()} total contacts · {allContacts.filter(c => c.status === "customer").length} customers
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -205,7 +213,7 @@ function ContactsPageInner() {
         {/* Stats strip */}
         <div className="grid grid-cols-5 gap-3">
           {[
-            { label: "Total", value: allContacts.length, color: "text-surface-200" },
+            { label: "Loaded", value: allContacts.length, color: "text-surface-200" },
             { label: "Leads", value: allContacts.filter(c => c.status === "lead").length, color: "text-surface-400" },
             { label: "Prospects", value: allContacts.filter(c => c.status === "prospect").length, color: "text-blue-400" },
             { label: "Customers", value: allContacts.filter(c => c.status === "customer").length, color: "text-emerald-400" },
@@ -213,10 +221,10 @@ function ContactsPageInner() {
           ].map((stat) => (
             <button
               key={stat.label}
-              onClick={() => setStatusFilter(stat.label.toLowerCase() === "total" ? "all" : stat.label.toLowerCase())}
+              onClick={() => setStatusFilter(["total", "loaded"].includes(stat.label.toLowerCase()) ? "all" : stat.label.toLowerCase())}
               className={cn(
                 "rounded-xl border p-3 text-left transition-all",
-                statusFilter === (stat.label.toLowerCase() === "total" ? "all" : stat.label.toLowerCase())
+                statusFilter === (["total", "loaded"].includes(stat.label.toLowerCase()) ? "all" : stat.label.toLowerCase())
                   ? "border-brand-500/40 bg-brand-500/10"
                   : "border-surface-800 bg-surface-900/50 hover:border-surface-700"
               )}
@@ -492,12 +500,7 @@ function ContactsPageInner() {
                             <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover/tip:block whitespace-nowrap rounded-md bg-surface-700 px-2 py-1 text-[10px] text-surface-100 shadow-lg z-50">Edit Contact</span>
                           </div>
                           {/* Delete */}
-                          <div className="relative group/tip">
-                            <button onClick={() => handleDelete(contact.id)} className="flex h-6 w-6 items-center justify-center rounded-md text-surface-500 hover:text-red-400 hover:bg-red-500/10 transition-all">
-                              <X size={12} />
-                            </button>
-                            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover/tip:block whitespace-nowrap rounded-md bg-surface-700 px-2 py-1 text-[10px] text-surface-100 shadow-lg z-50">Delete</span>
-                          </div>
+                          <ConfirmAction onConfirm={() => handleDelete(contact.id)} />
                         </div>
                       </td>
                     </tr>
@@ -518,31 +521,8 @@ function ContactsPageInner() {
               </div>
             )}
             <div className="flex items-center justify-between border-t border-surface-800 px-4 py-3">
-              <span className="text-xs text-surface-500">
-                {loading ? "Loading…" : filtered.length === 0 ? "No contacts" : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, filtered.length)} of ${filtered.length} contact${filtered.length !== 1 ? "s" : ""}`}
-              </span>
-              {totalPages > 1 && (
-                <div className="flex items-center gap-1">
-                  {getPageNumbers().map((p, i) =>
-                    p === "..." ? (
-                      <span key={i} className="flex h-6 w-6 items-center justify-center text-xs text-surface-600">…</span>
-                    ) : (
-                      <button
-                        key={i}
-                        onClick={() => setPage(Number(p))}
-                        className={cn(
-                          "flex h-6 w-6 items-center justify-center rounded-md text-xs transition-all",
-                          p === currentPage
-                            ? "bg-brand-500 text-white"
-                            : "text-surface-500 hover:text-surface-300 hover:bg-surface-800"
-                        )}
-                      >
-                        {p}
-                      </button>
-                    )
-                  )}
-                </div>
-              )}
+              <span className="text-xs text-surface-500">{loading ? "Loading…" : `Showing ${allContacts.length.toLocaleString()} of ${totalCount.toLocaleString()} contacts`}</span>
+              {allContacts.length < totalCount && <Button size="sm" variant="outline" loading={loadingMore} onClick={loadMore}>Load More</Button>}
             </div>
           </Card>
         )}

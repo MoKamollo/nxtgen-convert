@@ -1,5 +1,6 @@
 "use client";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { ConfirmAction, Toast } from "@/components/modules/ModulePrimitives";
 import { Card } from "@/components/ui/Card";
 import { Badge, StatusBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -19,9 +20,7 @@ import {
   Zap,
   MessageSquare,
   ChevronRight,
-  Copy,
   Play,
-  Pause,
   Trash2,
   MoreHorizontal,
   X,
@@ -51,6 +50,7 @@ export default function CampaignsPage() {
   const [saving, setSaving] = useState(false);
   const [launching, setLaunching] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", type: "email", subject: "", fromName: "", fromEmail: "" });
+  const [actionError, setActionError] = useState("");
 
   const load = useCallback(() => {
     fetch(apiUrl("/api/campaigns"))
@@ -82,7 +82,6 @@ export default function CampaignsPage() {
   };
 
   const handleLaunch = async (campaignId: string) => {
-    if (!confirm("Send this campaign to all contacts with email addresses?")) return;
     setLaunching(campaignId);
     const res = await fetch(apiUrl(`/api/campaigns/${campaignId}/send`), { method: "POST" });
     const j = await res.json();
@@ -90,12 +89,11 @@ export default function CampaignsPage() {
     if (res.ok) {
       load();
     } else {
-      alert(j.error ?? "Failed to send campaign");
+      setActionError(j.error ?? "Failed to send campaign");
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this campaign?")) return;
     await fetch(apiUrl(`/api/campaigns/${id}`), { method: "DELETE" });
     setAllCampaigns(prev => prev.filter(c => c.id !== id));
     setActiveMenu(null);
@@ -311,22 +309,14 @@ export default function CampaignsPage() {
                   {/* Actions */}
                   <div className="flex items-center gap-1.5 ml-2 relative">
                     {campaign.status === "draft" && (
-                      <Button
-                        variant="outline" size="sm"
-                        icon={launching === campaign.id ? undefined : Play}
-                        loading={launching === campaign.id}
-                        onClick={e => { e.stopPropagation(); handleLaunch(campaign.id); }}>
-                        {launching === campaign.id ? "Sending…" : "Launch"}
-                      </Button>
+                      <div onClick={(event) => event.stopPropagation()}>
+                        <ConfirmAction
+                          label={launching === campaign.id ? "Sending…" : "Launch"}
+                          disabled={launching === campaign.id}
+                          onConfirm={() => handleLaunch(campaign.id)}
+                        />
+                      </div>
                     )}
-                    {campaign.status === "sending" && (
-                      <Button variant="outline" size="sm" icon={Pause}>
-                        Pause
-                      </Button>
-                    )}
-                    <button className="flex h-7 w-7 items-center justify-center rounded-lg text-surface-500 hover:text-surface-300 hover:bg-surface-800 transition-all">
-                      <Copy size={13} />
-                    </button>
                     <button
                       onClick={(e) => { e.stopPropagation(); setActiveMenu(activeMenu === campaign.id ? null : campaign.id); }}
                       className="flex h-7 w-7 items-center justify-center rounded-lg text-surface-500 hover:text-surface-300 hover:bg-surface-800 transition-all">
@@ -334,10 +324,7 @@ export default function CampaignsPage() {
                     </button>
                     {activeMenu === campaign.id && (
                       <div className="absolute right-0 top-8 z-20 w-36 rounded-lg border border-surface-700 bg-surface-900 shadow-xl py-1">
-                        <button onClick={() => handleDelete(campaign.id)}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-xs text-red-400 hover:bg-surface-800 transition-colors">
-                          <Trash2 size={12} /> Delete
-                        </button>
+                        <div className="px-2 py-1"><ConfirmAction onConfirm={() => handleDelete(campaign.id)} /></div>
                       </div>
                     )}
                     <ChevronRight size={14} className="text-surface-700 group-hover:text-surface-500 transition-colors ml-1" />

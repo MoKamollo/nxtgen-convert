@@ -11,7 +11,8 @@ import {
   Palette, Code, Users, Check, Zap, Mail, MessageSquare,
   Calendar, Database, Webhook, Loader2, Plus, X, Trash2, TrendingUp,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { ConfirmAction, Modal, Toast } from "@/components/modules/ModulePrimitives";
 
 type OrgMember = {
   id: string; name: string; email: string; role: string;
@@ -22,13 +23,28 @@ type OrgData = {
   id: string; name: string; slug: string; website: string | null;
   industry: string | null; size: string | null; plan: string;
   members: OrgMember[];
+  settings?: { integrations?: Record<string, boolean>; [key: string]: unknown };
 };
 
 type UserData = {
   tenantId: string; role: string | null;
   org: { id: string; name: string; plan: string } | null;
-  user: { id: string; name: string; email: string; jobTitle: string | null; avatar: string | null } | null;
+  user: { id: string; name: string; email: string; jobTitle: string | null; avatar: string | null; phone?: string | null; timezone?: string | null; preferences?: { notifications?: NotificationPreferences; appearance?: AppearancePreferences } } | null;
 };
+
+
+type NotificationPreferences = { email: Record<string, boolean>; inApp: Record<string, boolean> };
+type AppearancePreferences = { density: "comfortable" | "compact"; reduceMotion: boolean };
+type ApiKeyItem = { id: string; name: string; maskedKey: string; createdAt: string; lastUsed: string | null };
+type WebhookItem = { id: string; url: string; events: string[]; active: boolean; createdAt: string };
+const NOTIFICATION_EVENTS = [
+  ["contactCreated", "New contact created"], ["dealStageChanged", "Deal stage changed"], ["dealWon", "Deal won"],
+  ["taskDue", "Task due in 24h"], ["campaignSent", "Campaign sent"], ["ticketResolved", "Ticket resolved"], ["weeklySummary", "Weekly summary"],
+] as const;
+const defaultNotifications = (): NotificationPreferences => ({
+  email: Object.fromEntries(NOTIFICATION_EVENTS.map(([key]) => [key, true])),
+  inApp: Object.fromEntries(NOTIFICATION_EVENTS.map(([key]) => [key, true])),
+});
 
 const SETTINGS_SECTIONS = [
   { id: "profile",       label: "Profile",       icon: User },
@@ -87,6 +103,21 @@ export default function SettingsPage() {
   const [contactCount, setContactCount] = useState<number | null>(null);
   const [emailsSentMonth, setEmailsSentMonth] = useState<number | null>(null);
 
+  const [apiKeys, setApiKeys] = useState<ApiKeyItem[]>([]);
+  const [webhooks, setWebhooks] = useState<WebhookItem[]>([]);
+  const [showKeyModal, setShowKeyModal] = useState(false);
+  const [keyName, setKeyName] = useState("Default");
+  const [newKey, setNewKey] = useState("");
+  const [webhookForm, setWebhookForm] = useState({ url: "", events: ["contact.created", "deal.won"] });
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
+  const [integrationModal, setIntegrationModal] = useState<string | null>(null);
+  const [stripeForm, setStripeForm] = useState({ stripePublishableKey: "", stripeWebhookSecret: "" });
+  const [showPlanModal, setShowPlanModal] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationPreferences>(defaultNotifications);
+  const [appearance, setAppearance] = useState<AppearancePreferences>({ density: "comfortable", reduceMotion: false });
+  const [actionError, setActionError] = useState("");
+  const [toast, setToast] = useState("");
+
   useEffect(() => {
     fetch(apiUrl("/api/users/me"))
       .then(r => r.json())
@@ -100,6 +131,8 @@ export default function SettingsPage() {
             phone:    data.user.phone    ?? "",
             timezone: data.user.timezone ?? "America/New_York",
           });
+          if (data.user.preferences?.notifications) setNotifications(data.user.preferences.notifications);
+          if (data.user.preferences?.appearance) setAppearance(data.user.preferences.appearance);
         }
         setLoadingUser(false);
       })
@@ -134,7 +167,7 @@ export default function SettingsPage() {
   }, [activeSection, contactCount]);
 
   useEffect(() => {
-    if (activeSection === "organization" || activeSection === "team" || activeSection === "billing") {
+    if (["organization", "team", "billing", "integrations"].includes(activeSection)) {
       if (orgData) return;
       setLoadingOrg(true);
       fetch(apiUrl("/api/org"))
@@ -152,6 +185,46 @@ export default function SettingsPage() {
         .catch(() => setLoadingOrg(false));
     }
   }, [activeSection, orgData]);
+
+  const loadDeveloperSettings = useCallback(async () => {
+    try {
+      const [keysResponse, hooksResponse] = await Promise.all([fetch(apiUrl("/api/api-keys")), fetch(apiUrl("/api/webhooks"))]);
+      const [keysJson, hooksJson] = await Promise.all([keysResponse.json(), hooksResponse.json()]);
+      if (!keysResponse.ok) throw new Error(keysJson.error);
+      if (!hooksResponse.ok) throw new Error(hooksJson.error);
+      setApiKeys(keysJson.data ?? []); setWebhooks(hooksJson.data ?? []);
+    } catch (error) { setActionError(error instanceof Error ? error.message : "Failed to load developer settings"); }
+  }, []);
+
+  useEffect(() => { if (activeSection === "api") loadDeveloperSettings(); }, [activeSection, loadDeveloperSettings]);
+
+  async function updatePassword() {
+    setActionError("");
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) { setActionError("New passwords do not match"); return; }
+    setSaving(true);
+    try {
+      const response = await fetch(apiUrl("/api/users/password"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(passwordForm) });
+      const json = await response.json(); if (!response.ok) throw new Error(json.error);
+      setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" }); setToast("Password updated");
+    } catch (error) { setActionError(error instanceof Error ? error.message : "Password update failed"); } finally { setSaving(false); }
+  }
+
+  async function generateKey() {
+    setSaving(true); setActionError("");
+    try { const response = await fetch(apiUrl("/api/api-keys"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: keyName }) }); const json = await response.json(); if (!response.ok) throw new Error(json.error); setNewKey(json.data.key); setShowKeyModal(false); setToast("API key generated"); await loadDeveloperSettings(); }
+    catch (error) { setActionError(error instanceof Error ? error.message : "Key generation failed"); } finally { setSaving(false); }
+  }
+  async function revokeKey(id: string) { const response = await fetch(apiUrl(`/api/api-keys/${id}`), { method: "DELETE" }); const json = await response.json(); if (!response.ok) { setActionError(json.error); return; } setToast("API key revoked"); await loadDeveloperSettings(); }
+  async function saveWebhook() {
+    setSaving(true); setActionError(""); try { const response = await fetch(apiUrl("/api/webhooks"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(webhookForm) }); const json = await response.json(); if (!response.ok) throw new Error(json.error); setWebhookForm({ url: "", events: ["contact.created", "deal.won"] }); setToast("Webhook saved"); await loadDeveloperSettings(); } catch (error) { setActionError(error instanceof Error ? error.message : "Webhook save failed"); } finally { setSaving(false); }
+  }
+  async function revokeWebhook(id: string) { const response = await fetch(apiUrl(`/api/webhooks/${id}`), { method: "DELETE" }); const json = await response.json(); if (!response.ok) { setActionError(json.error); return; } setToast("Webhook removed"); await loadDeveloperSettings(); }
+  async function connectIntegration(name: string) {
+    setSaving(true); setActionError(""); const slug = name.toLowerCase().replace(/\s+/g, "-");
+    try { const path = name === "Stripe" ? "/api/integrations/stripe" : `/api/integrations/${slug}`; const body = name === "Stripe" ? stripeForm : {}; const response = await fetch(apiUrl(path), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); const json = await response.json(); if (!response.ok) throw new Error(json.error); setIntegrationModal(null); setOrgData(null); setToast(`${name} connected`); } catch (error) { setActionError(error instanceof Error ? error.message : "Integration update failed"); } finally { setSaving(false); }
+  }
+  async function saveNotifications(next: NotificationPreferences) { setNotifications(next); const response = await fetch(apiUrl("/api/users/me"), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ notifications: next }) }); if (!response.ok) { const json = await response.json(); setActionError(json.error); } else setToast("Notification preferences saved"); }
+  async function saveAppearance(next: AppearancePreferences) { setAppearance(next); document.documentElement.dataset.density = next.density; document.documentElement.classList.toggle("reduce-motion", next.reduceMotion); const response = await fetch(apiUrl("/api/users/me"), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ appearance: next }) }); if (!response.ok) { const json = await response.json(); setActionError(json.error); } else setToast("Appearance saved"); }
 
   async function saveProfile(e: React.FormEvent) {
     e.preventDefault();
@@ -426,170 +499,52 @@ export default function SettingsPage() {
             {/* Billing */}
             {activeSection === "billing" && (
               <div className="space-y-5">
-                <div>
-                  <h2 className="text-lg font-bold text-surface-50">Billing & Plans</h2>
-                  <p className="text-sm text-surface-500 mt-0.5">Manage your subscription</p>
-                </div>
-
-                {loadingOrg ? (
-                  <div className="flex items-center justify-center py-8"><Loader2 size={20} className="animate-spin text-surface-500" /></div>
-                ) : (
-                  <>
-                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/8 p-5">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className={`text-sm font-bold ${planInfo.color}`}>{planInfo.name} Plan</p>
-                            <Badge variant="success" size="sm" dot>Active</Badge>
-                          </div>
-                          <p className="text-xs text-surface-400 mt-0.5">
-                            Contact our team to change plans or get pricing
-                          </p>
-                        </div>
-                        <Button variant="outline" size="sm">Change Plan</Button>
-                      </div>
-                      <div className="mt-4 grid grid-cols-3 gap-3">
-                        {[
-                          { label: "Members", used: orgData?.members?.length ?? "—", limit: "Unlimited" },
-                          { label: "Contacts", used: contactCount !== null ? contactCount : "—", limit: "Unlimited" },
-                          { label: "Emails/month", used: emailsSentMonth !== null ? emailsSentMonth : "—", limit: "Unlimited" },
-                        ].map(usage => (
-                          <div key={usage.label} className="rounded-lg bg-surface-900/60 p-3">
-                            <p className="text-xs text-surface-500">{usage.label}</p>
-                            <p className="text-sm font-bold text-surface-100 mt-0.5">{usage.used}</p>
-                            <p className="text-[11px] text-emerald-400">{usage.limit}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl border border-surface-800 bg-surface-900/50 p-5">
-                      <h3 className="text-sm font-semibold text-surface-200 mb-3">Payment Method</h3>
-                      <div className="flex flex-col items-center justify-center py-4 gap-2 text-center">
-                        <CreditCard size={20} className="text-surface-600" />
-                        <p className="text-xs text-surface-500">Billing is managed via your account portal</p>
-                        <Button variant="outline" size="sm">Open Billing Portal</Button>
-                      </div>
-                    </div>
-                  </>
-                )}
+                <div><h2 className="text-lg font-bold text-surface-50">Billing & Plans</h2><p className="text-sm text-surface-500 mt-0.5">Manage your subscription</p></div>
+                {loadingOrg ? <div className="flex items-center justify-center py-8"><Loader2 size={20} className="animate-spin text-surface-500" /></div> : <>
+                  <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/8 p-5">
+                    <div className="flex items-center justify-between"><div><div className="flex items-center gap-2"><p className={`text-sm font-bold ${planInfo.color}`}>{planInfo.name} Plan</p><Badge variant="success" size="sm" dot>Active</Badge></div><p className="text-xs text-surface-400 mt-0.5">Your subscription is managed through NxtGen Space</p></div><Button variant="outline" size="sm" onClick={() => setShowPlanModal(true)}>Change Plan</Button></div>
+                    <div className="mt-4 grid grid-cols-3 gap-3">{[{ label: "Members", used: orgData?.members?.length ?? "—" },{ label: "Contacts", used: contactCount !== null ? contactCount : "—" },{ label: "Emails/month", used: emailsSentMonth !== null ? emailsSentMonth : "—" }].map(usage => <div key={usage.label} className="rounded-lg bg-surface-900/60 p-3"><p className="text-xs text-surface-500">{usage.label}</p><p className="text-sm font-bold text-surface-100 mt-0.5">{usage.used}</p><p className="text-[11px] text-emerald-400">Unlimited</p></div>)}</div>
+                  </div>
+                  <div className="rounded-xl border border-surface-800 bg-surface-900/50 p-5"><h3 className="text-sm font-semibold text-surface-200 mb-3">Payment Method</h3><div className="flex flex-col items-center justify-center py-4 gap-2 text-center"><CreditCard size={20} className="text-surface-600" /><p className="text-xs text-surface-500">Billing is managed in your NxtGen Space account</p><Button variant="outline" size="sm" onClick={() => window.open("https://space.nxtgen-stack.com/billing", "_blank", "noopener,noreferrer")}>Open Billing Portal</Button></div></div>
+                </>}
               </div>
             )}
 
             {/* Integrations */}
             {activeSection === "integrations" && (
               <div className="space-y-5">
-                <div>
-                  <h2 className="text-lg font-bold text-surface-50">Integrations</h2>
-                  <p className="text-sm text-surface-500 mt-0.5">Connect your tools and services</p>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  {INTEGRATIONS.map(integration => {
-                    const Icon = integration.icon;
-                    return (
-                      <div key={integration.name} className={cn("rounded-xl border p-4 flex items-center gap-3 transition-all hover:border-surface-600", integration.connected ? "border-emerald-500/20 bg-emerald-500/5" : "border-surface-800 bg-surface-900/50")}>
-                        <div className={cn("flex h-9 w-9 items-center justify-center rounded-lg", integration.connected ? "bg-emerald-500/15" : "bg-surface-800")}>
-                          <Icon size={16} className={integration.connected ? "text-emerald-400" : "text-surface-500"} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-semibold text-surface-200">{integration.name}</p>
-                          <p className="text-[11px] text-surface-500">{integration.category}</p>
-                        </div>
-                        {integration.connected ? (
-                          <Badge variant="success" size="sm" dot>Connected</Badge>
-                        ) : (
-                          <Button variant="outline" size="xs">Connect</Button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                <div><h2 className="text-lg font-bold text-surface-50">Integrations</h2><p className="text-sm text-surface-500 mt-0.5">Connect services through secure credentials, Zapier, or webhooks</p></div>
+                <div className="grid grid-cols-2 gap-3">{INTEGRATIONS.map(integration => { const Icon = integration.icon; const slug = integration.name.toLowerCase().replace(/\s+/g, "-"); const connected = Boolean(orgData?.settings?.integrations?.[slug]); return <div key={integration.name} className={cn("rounded-xl border p-4 flex items-center gap-3 transition-all hover:border-surface-600", connected ? "border-emerald-500/20 bg-emerald-500/5" : "border-surface-800 bg-surface-900/50")}><div className={cn("flex h-9 w-9 items-center justify-center rounded-lg", connected ? "bg-emerald-500/15" : "bg-surface-800")}><Icon size={16} className={connected ? "text-emerald-400" : "text-surface-500"} /></div><div className="flex-1 min-w-0"><p className="text-xs font-semibold text-surface-200">{integration.name}</p><p className="text-[11px] text-surface-500">{integration.category}</p></div>{connected ? <Badge variant="success" size="sm" dot>Connected</Badge> : <Button variant="outline" size="xs" onClick={() => setIntegrationModal(integration.name)}>Connect</Button>}</div>})}</div>
               </div>
             )}
 
             {/* API */}
             {activeSection === "api" && (
               <div className="space-y-5">
-                <div>
-                  <h2 className="text-lg font-bold text-surface-50">API & Webhooks</h2>
-                  <p className="text-sm text-surface-500 mt-0.5">Manage API keys and webhook endpoints</p>
+                <div><h2 className="text-lg font-bold text-surface-50">API & Webhooks</h2><p className="text-sm text-surface-500 mt-0.5">Manage tenant-scoped credentials and event delivery</p></div>
+                {actionError && <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-400">{actionError}</div>}
+                <div className="rounded-xl border border-surface-800 bg-surface-900/50 p-5 space-y-4"><div className="flex items-center justify-between"><h3 className="text-sm font-semibold text-surface-200">API Keys</h3><Button variant="outline" size="sm" icon={Key} onClick={() => { setNewKey(""); setShowKeyModal(true); }}>Generate new key</Button></div>
+                  {newKey && <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3"><p className="text-[11px] font-semibold text-amber-300">Copy this key now. It will not be shown again.</p><div className="mt-2 flex gap-2"><code className="min-w-0 flex-1 overflow-x-auto rounded bg-surface-950 px-3 py-2 text-[10px] text-surface-200">{newKey}</code><Button size="sm" onClick={() => { navigator.clipboard.writeText(newKey); setToast("API key copied"); }}>Copy</Button></div></div>}
+                  {apiKeys.length === 0 ? <div className="flex flex-col items-center justify-center py-6 gap-2 text-center"><Key size={20} className="text-surface-600"/><p className="text-xs text-surface-400">No API keys have been issued</p></div> : <div className="divide-y divide-surface-800 rounded-lg border border-surface-800">{apiKeys.map(key => <div key={key.id} className="flex items-center gap-3 px-3 py-3"><div className="min-w-0 flex-1"><p className="text-xs font-semibold text-surface-200">{key.name}</p><p className="font-mono text-[10px] text-surface-500">{key.maskedKey}</p></div><span className="text-[10px] text-surface-600">{new Date(key.createdAt).toLocaleDateString("en-US")}</span><ConfirmAction label="Revoke" onConfirm={() => revokeKey(key.id)}/></div>)}</div>}
                 </div>
-                <div className="rounded-xl border border-surface-800 bg-surface-900/50 p-5 space-y-4">
-                  <h3 className="text-sm font-semibold text-surface-200">API Keys</h3>
-                  <div className="flex flex-col items-center justify-center py-6 gap-2 text-center">
-                    <Key size={20} className="text-surface-600" />
-                    <p className="text-xs text-surface-400">API key management is coming soon</p>
-                  </div>
-                  <Button variant="outline" size="sm" icon={Key}>Generate new key</Button>
-                </div>
-                <div className="rounded-xl border border-surface-800 bg-surface-900/50 p-5 space-y-4">
-                  <h3 className="text-sm font-semibold text-surface-200">Webhooks</h3>
-                  <input type="url" placeholder="https://your-app.com/webhooks/nxtgen"
-                    className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 placeholder:text-surface-600 focus:outline-none focus:border-brand-500" />
-                  <div className="grid grid-cols-2 gap-2">
-                    {["contact.created","deal.won","deal.lost","campaign.sent","ticket.resolved","payment.received"].map(event => (
-                      <label key={event} className="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" className="h-3.5 w-3.5 rounded border-surface-600 bg-surface-800 accent-brand-500" defaultChecked />
-                        <span className="font-mono text-[11px] text-surface-400">{event}</span>
-                      </label>
-                    ))}
-                  </div>
-                  <Button variant="gradient" size="sm" icon={Webhook}>Save webhook</Button>
+                <div className="rounded-xl border border-surface-800 bg-surface-900/50 p-5 space-y-4"><h3 className="text-sm font-semibold text-surface-200">Webhooks</h3><input type="url" value={webhookForm.url} onChange={e => setWebhookForm(f => ({ ...f, url: e.target.value }))} placeholder="https://your-app.com/webhooks/nxtgen" className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 placeholder:text-surface-600 focus:outline-none focus:border-brand-500"/><div className="grid grid-cols-2 gap-2">{["contact.created","deal.won","deal.lost","campaign.sent","ticket.resolved","payment.received"].map(event => { const checked = webhookForm.events.includes(event); return <label key={event} className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={checked} onChange={() => setWebhookForm(f => ({ ...f, events: checked ? f.events.filter(value => value !== event) : [...f.events, event] }))} className="h-3.5 w-3.5 rounded border-surface-600 bg-surface-800 accent-brand-500"/><span className="font-mono text-[11px] text-surface-400">{event}</span></label>})}</div><Button variant="gradient" size="sm" icon={Webhook} loading={saving} onClick={saveWebhook}>Save webhook</Button>
+                  {webhooks.length > 0 && <div className="divide-y divide-surface-800 rounded-lg border border-surface-800">{webhooks.map(hook => <div key={hook.id} className="flex items-center gap-3 px-3 py-3"><div className="min-w-0 flex-1"><p className="truncate text-xs font-medium text-surface-200">{hook.url}</p><p className="mt-1 text-[10px] text-surface-500">{hook.events.join(" · ")}</p></div><Badge variant="success" size="sm">Active</Badge><ConfirmAction label="Remove" onConfirm={() => revokeWebhook(hook.id)}/></div>)}</div>}
                 </div>
               </div>
             )}
 
             {/* Security */}
             {activeSection === "security" && (
-              <div className="space-y-5">
-                <div>
-                  <h2 className="text-lg font-bold text-surface-50">Security</h2>
-                  <p className="text-sm text-surface-500 mt-0.5">Protect your account</p>
-                </div>
-                <div className="rounded-xl border border-surface-800 bg-surface-900/50 p-5 space-y-4">
-                  <h3 className="text-sm font-semibold text-surface-200">Two-Factor Authentication</h3>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs font-medium text-surface-200">Authenticator App</p>
-                      <p className="text-xs text-surface-500">Use Google Authenticator or similar</p>
-                    </div>
-                    <Button variant="outline" size="xs">Set up 2FA</Button>
-                  </div>
-                </div>
-                <div className="rounded-xl border border-surface-800 bg-surface-900/50 p-5 space-y-4">
-                  <h3 className="text-sm font-semibold text-surface-200">Change Password</h3>
-                  <input type="password" placeholder="Current Password" className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 placeholder:text-surface-600 focus:outline-none focus:border-brand-500" />
-                  <input type="password" placeholder="New Password" className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 placeholder:text-surface-600 focus:outline-none focus:border-brand-500" />
-                  <input type="password" placeholder="Confirm New Password" className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 placeholder:text-surface-600 focus:outline-none focus:border-brand-500" />
-                  <Button variant="gradient" size="sm">Update Password</Button>
-                </div>
-                <div className="rounded-xl border border-surface-800 bg-surface-900/50 p-5">
-                  <h3 className="text-sm font-semibold text-surface-200 mb-3">Active Sessions</h3>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between rounded-lg border border-surface-800 px-3 py-2.5">
-                      <div>
-                        <p className="text-xs font-medium text-surface-200">Current Session</p>
-                        <p className="text-[11px] text-surface-500">Active now</p>
-                      </div>
-                      <Badge variant="success" size="sm">Current</Badge>
-                    </div>
-                  </div>
-                </div>
+              <div className="space-y-5"><div><h2 className="text-lg font-bold text-surface-50">Security</h2><p className="text-sm text-surface-500 mt-0.5">Protect your account</p></div>{actionError && <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-400">{actionError}</div>}
+                <div className="rounded-xl border border-surface-800 bg-surface-900/50 p-5 space-y-4"><h3 className="text-sm font-semibold text-surface-200">Two-Factor Authentication</h3><div className="flex items-center justify-between"><div><p className="text-xs font-medium text-surface-200">Managed by NxtGen Space</p><a className="text-xs text-brand-400 hover:text-brand-300" target="_blank" rel="noreferrer" href="https://space.nxtgen-stack.com/settings/security">Open Space security settings</a></div><Shield size={18} className="text-surface-600"/></div></div>
+                <div className="rounded-xl border border-surface-800 bg-surface-900/50 p-5 space-y-4"><h3 className="text-sm font-semibold text-surface-200">Change Password</h3><input type="password" value={passwordForm.currentPassword} onChange={e => setPasswordForm(f => ({ ...f, currentPassword: e.target.value }))} placeholder="Current Password" className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 placeholder:text-surface-600 focus:outline-none focus:border-brand-500"/><input type="password" value={passwordForm.newPassword} onChange={e => setPasswordForm(f => ({ ...f, newPassword: e.target.value }))} placeholder="New Password" className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 placeholder:text-surface-600 focus:outline-none focus:border-brand-500"/><input type="password" value={passwordForm.confirmPassword} onChange={e => setPasswordForm(f => ({ ...f, confirmPassword: e.target.value }))} placeholder="Confirm New Password" className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 placeholder:text-surface-600 focus:outline-none focus:border-brand-500"/><Button variant="gradient" size="sm" loading={saving} onClick={updatePassword}>Update Password</Button></div>
+                <div className="rounded-xl border border-surface-800 bg-surface-900/50 p-5"><h3 className="text-sm font-semibold text-surface-200 mb-3">Active Sessions</h3><div className="flex items-center justify-between rounded-lg border border-surface-800 px-3 py-2.5"><div><p className="text-xs font-medium text-surface-200">Current Session</p><p className="text-[11px] text-surface-500">Active now</p></div><Badge variant="success" size="sm">Current</Badge></div></div>
               </div>
             )}
 
-            {/* Notifications placeholder */}
+            {/* Notifications */}
             {activeSection === "notifications" && (
-              <div className="space-y-5">
-                <div>
-                  <h2 className="text-lg font-bold text-surface-50">Notifications</h2>
-                  <p className="text-sm text-surface-500 mt-0.5">Control when and how you are notified</p>
-                </div>
-                <div className="rounded-xl border border-surface-800 bg-surface-900/50 p-8 flex flex-col items-center justify-center gap-2 text-center">
-                  <Bell size={24} className="text-surface-600" />
-                  <p className="text-sm text-surface-400">Notification preferences coming soon</p>
-                </div>
-              </div>
+              <div className="space-y-5"><div><h2 className="text-lg font-bold text-surface-50">Notifications</h2><p className="text-sm text-surface-500 mt-0.5">Changes save immediately</p></div>{(["email", "inApp"] as const).map(channel => <div key={channel} className="rounded-xl border border-surface-800 bg-surface-900/50 overflow-hidden"><div className="border-b border-surface-800 px-5 py-3"><h3 className="text-sm font-semibold text-surface-200">{channel === "email" ? "Email Notifications" : "In-App Notifications"}</h3></div><div className="divide-y divide-surface-800">{NOTIFICATION_EVENTS.map(([key, label]) => <div key={key} className="flex items-center justify-between px-5 py-3"><span className="text-xs text-surface-300">{label}</span><button onClick={() => { const next = { ...notifications, [channel]: { ...notifications[channel], [key]: !notifications[channel][key] } }; saveNotifications(next); }} className={cn("relative h-5 w-9 rounded-full transition-colors", notifications[channel][key] ? "bg-brand-500" : "bg-surface-700")}><span className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform", notifications[channel][key] ? "translate-x-4" : "translate-x-0.5")}/></button></div>)}</div></div>)}</div>
             )}
 
             {/* Growth & CAC */}
@@ -698,22 +653,18 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* Appearance placeholder */}
+            {/* Appearance */}
             {activeSection === "appearance" && (
-              <div className="space-y-5">
-                <div>
-                  <h2 className="text-lg font-bold text-surface-50">Appearance</h2>
-                  <p className="text-sm text-surface-500 mt-0.5">Customize how NxtGen looks</p>
-                </div>
-                <div className="rounded-xl border border-surface-800 bg-surface-900/50 p-8 flex flex-col items-center justify-center gap-2 text-center">
-                  <Palette size={24} className="text-surface-600" />
-                  <p className="text-sm text-surface-400">Theme customization coming soon</p>
-                </div>
-              </div>
+              <div className="space-y-5"><div><h2 className="text-lg font-bold text-surface-50">Appearance</h2><p className="text-sm text-surface-500 mt-0.5">Adjust information density and motion</p></div><div className="rounded-xl border border-surface-800 bg-surface-900/50 p-5 space-y-5"><div><p className="text-xs font-semibold text-surface-300 mb-3">Layout density</p><div className="grid grid-cols-2 gap-3">{(["comfortable", "compact"] as const).map(value => <button key={value} onClick={() => saveAppearance({ ...appearance, density: value })} className={cn("rounded-xl border p-4 text-left", appearance.density === value ? "border-brand-500 bg-brand-500/10" : "border-surface-700 bg-surface-800/50")}><p className="text-xs font-semibold capitalize text-surface-200">{value}</p><p className="mt-1 text-[11px] text-surface-500">{value === "comfortable" ? "More space between interface elements" : "Fit more data on each screen"}</p></button>)}</div></div><div className="flex items-center justify-between border-t border-surface-800 pt-4"><div><p className="text-xs font-semibold text-surface-200">Reduce motion</p><p className="text-[11px] text-surface-500">Minimize transitions and animated effects</p></div><button onClick={() => saveAppearance({ ...appearance, reduceMotion: !appearance.reduceMotion })} className={cn("relative h-5 w-9 rounded-full", appearance.reduceMotion ? "bg-brand-500" : "bg-surface-700")}><span className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform", appearance.reduceMotion ? "translate-x-4" : "translate-x-0.5")}/></button></div></div></div>
             )}
           </div>
         </div>
       </div>
+
+      <Modal open={showKeyModal} onClose={() => setShowKeyModal(false)} title="Generate API key"><div className="space-y-4 p-5"><Input label="Key name" value={keyName} onChange={e => setKeyName(e.target.value)} placeholder="Production integration"/><div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setShowKeyModal(false)}>Cancel</Button><Button variant="primary" loading={saving} onClick={generateKey}>Generate key</Button></div></div></Modal>
+      <Modal open={showPlanModal} onClose={() => setShowPlanModal(false)} title="Change plan" width="max-w-3xl"><div className="p-5"><div className="grid grid-cols-3 gap-3">{[{name:"Starter",price:"$49"},{name:"Growth",price:"$99"},{name:"Pro",price:"$199"}].map(plan => <div key={plan.name} className="rounded-xl border border-surface-800 bg-surface-950 p-4"><p className="text-sm font-semibold text-surface-100">{plan.name}</p><p className="mt-2 text-2xl font-bold text-surface-50">{plan.price}<span className="text-xs font-normal text-surface-500">/month</span></p><Button className="mt-4" size="sm" fullWidth onClick={() => window.open("https://space.nxtgen-stack.com/billing", "_blank", "noopener,noreferrer")}>Select Plan</Button></div>)}</div><p className="mt-4 text-xs text-surface-500">Plan changes are completed through NxtGen Space billing or by emailing <a className="text-brand-400" href="mailto:hello@nxtgen-stack.com">hello@nxtgen-stack.com</a>.</p></div></Modal>
+      <Modal open={!!integrationModal} onClose={() => setIntegrationModal(null)} title={`Connect ${integrationModal ?? "integration"}`} width="max-w-lg">{integrationModal === "Stripe" ? <div className="space-y-4 p-5"><Input label="Publishable Key" value={stripeForm.stripePublishableKey} onChange={e => setStripeForm(f => ({ ...f, stripePublishableKey: e.target.value }))} placeholder="pk_live_..."/><Input label="Webhook Secret" type="password" value={stripeForm.stripeWebhookSecret} onChange={e => setStripeForm(f => ({ ...f, stripeWebhookSecret: e.target.value }))} placeholder="whsec_..."/><Button variant="primary" fullWidth loading={saving} onClick={() => connectIntegration("Stripe")}>Save Stripe connection</Button></div> : <div className="space-y-4 p-5"><p className="text-sm leading-6 text-surface-400">Connect this service through the NxtGen Zapier integration or route events through the webhook controls in API & Webhooks.</p><div className="flex gap-2"><Button variant="outline" onClick={() => window.open("https://zapier.com/apps/nxtgen", "_blank", "noopener,noreferrer")}>Open Zapier</Button><Button variant="primary" loading={saving} onClick={() => integrationModal && connectIntegration(integrationModal)}>Mark connected</Button></div></div>}</Modal>
+      {toast && <Toast message={toast}/>}
 
       {/* Invite Member Modal */}
       {showInvite && (

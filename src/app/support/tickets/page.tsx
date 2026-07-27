@@ -1,5 +1,6 @@
 "use client";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { ConfirmAction } from "@/components/modules/ModulePrimitives";
 import { Card } from "@/components/ui/Card";
 import { Badge, StatusBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -92,7 +93,6 @@ export default function TicketsPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this ticket?")) return;
     setTickets(prev => prev.filter(t => t.id !== id));
     await fetch(apiUrl(`/api/tickets/${id}`), { method: "DELETE" });
   }
@@ -241,10 +241,9 @@ export default function TicketsPage() {
                       >
                         {STATUS_LABELS[ticket.status] ?? "Update"}
                       </button>
-                      <button onClick={e => { e.stopPropagation(); handleDelete(ticket.id); }}
-                        className="flex h-6 w-6 items-center justify-center rounded-md text-surface-500 hover:text-red-400 hover:bg-red-500/10 transition-all">
-                        <Trash2 size={12} />
-                      </button>
+                      <div onClick={(event) => event.stopPropagation()}>
+                        <ConfirmAction onConfirm={() => handleDelete(ticket.id)} />
+                      </div>
                     </div>
                   </div>
                 );

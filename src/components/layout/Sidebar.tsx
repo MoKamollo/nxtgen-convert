@@ -365,9 +365,11 @@ function NavItemComponent({
     );
   }
 
+  const destination = hasChildren ? item.children![0].href : item.href;
+
   return (
     <Link
-      href={item.href}
+      href={destination}
       title={collapsed ? item.label : undefined}
       className={cn(
         "flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg transition-all duration-150",

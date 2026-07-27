@@ -1,5 +1,6 @@
 "use client";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { ConfirmAction } from "@/components/modules/ModulePrimitives";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 import { apiUrl } from "@/lib/org";
@@ -61,7 +62,6 @@ export default function CompaniesPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this company?")) return;
     await fetch(apiUrl(`/api/companies/${id}`), { method: "DELETE" });
     setCompanies(prev => prev.filter(c => c.id !== id));
   };
@@ -132,7 +132,7 @@ export default function CompaniesPage() {
                         <button onClick={() => openEdit(c)} className="flex h-6 w-6 items-center justify-center rounded-md text-surface-500 hover:text-brand-400 hover:bg-brand-500/10 transition-all">
                           <Pencil size={12} />
                         </button>
-                        <button onClick={() => handleDelete(c.id)} className="text-xs text-red-400 hover:underline">Delete</button>
+                        <ConfirmAction onConfirm={() => handleDelete(c.id)} />
                       </div>
                     </td>
                   </tr>

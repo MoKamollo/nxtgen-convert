@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { contacts } from "@/db/schema";
+import { companies, contacts } from "@/db/schema";
+import { and, eq, ilike } from "drizzle-orm";
 
 const VALID_STATUSES = ["lead","prospect","customer","vip","churned"];
 
@@ -121,6 +122,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No valid rows found", skipped }, { status: 400 });
     }
 
+    const companyIds = new Map<string, string>();
+    for (const companyName of [...new Set(toInsert.map(row => row.company?.trim()).filter((name): name is string => Boolean(name)))]) {
+      const existing = await db.select({ id: companies.id }).from(companies)
+        .where(and(eq(companies.organizationId, orgId), ilike(companies.name, companyName))).limit(1);
+      if (existing[0]) companyIds.set(companyName.toLowerCase(), existing[0].id);
+      else {
+        const [created] = await db.insert(companies).values({ organizationId: orgId, name: companyName }).returning({ id: companies.id });
+        companyIds.set(companyName.toLowerCase(), created.id);
+      }
+    }
+
     // Batch insert in chunks of 100
     let inserted = 0;
     const chunkSize = 100;
@@ -135,7 +147,7 @@ export async function POST(request: NextRequest) {
           phone: c.phone ?? null,
           status: c.status ?? "lead",
           jobTitle: c.jobTitle ?? null,
-          company: c.company ?? null,
+          companyId: c.company ? companyIds.get(c.company.trim().toLowerCase()) ?? null : null,
           source: c.source ?? "import",
           score: calcScore({ email: c.email, phone: c.phone, jobTitle: c.jobTitle, source: c.source ?? "import", status: c.status ?? "lead" }),
           tags: [],

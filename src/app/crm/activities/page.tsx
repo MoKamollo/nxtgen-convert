@@ -1,5 +1,6 @@
 "use client";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { ConfirmAction } from "@/components/modules/ModulePrimitives";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
@@ -45,7 +46,6 @@ export default function ActivitiesPage() {
   const countByType = (t: string) => activities.filter(a => a.type === t).length;
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this activity?")) return;
     setActivities(prev => prev.filter(a => a.id !== id));
     await fetch(apiUrl(`/api/activities/${id}`), { method: "DELETE" });
   };
@@ -134,12 +134,9 @@ export default function ActivitiesPage() {
                         )}
                         {activity.duration && <p className="text-[11px] text-surface-600 mt-0.5">{activity.duration}m</p>}
                       </div>
-                      <button
-                        onClick={e => { e.stopPropagation(); handleDelete(activity.id); }}
-                        className="flex h-7 w-7 items-center justify-center rounded-md opacity-0 group-hover:opacity-100 text-surface-600 hover:text-red-400 hover:bg-red-500/10 transition-all"
-                      >
-                        <Trash2 size={13} />
-                      </button>
+                      <div onClick={(event) => event.stopPropagation()} className="opacity-0 group-hover:opacity-100">
+                        <ConfirmAction onConfirm={() => handleDelete(activity.id)} />
+                      </div>
                     </div>
                   </div>
                 );

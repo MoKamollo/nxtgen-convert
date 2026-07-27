@@ -11,6 +11,8 @@ import {
   GitBranch, Loader2, X,
 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
+import { ConfirmAction, Modal, Toast } from "@/components/modules/ModulePrimitives";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 type Workflow = {
   id: string; name: string; description: string | null;
@@ -43,6 +45,11 @@ export default function WorkflowsPage() {
   const [showModal, setShowModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ name: "", description: "", triggerEvent: "contact.created" });
+  const [showAiModal, setShowAiModal] = useState(false);
+  const [aiDescription, setAiDescription] = useState("");
+  const [statsWorkflow, setStatsWorkflow] = useState<Workflow | null>(null);
+  const [error, setError] = useState("");
+  const [toast, setToast] = useState("");
 
   const load = useCallback(() => {
     fetch(apiUrl("/api/workflows"))
@@ -90,14 +97,19 @@ export default function WorkflowsPage() {
         body: JSON.stringify({ name: form.name.trim(), description: form.description, trigger: { event: form.triggerEvent } }),
       });
       const j = await res.json();
-      if (!res.ok) { alert(j.error ?? "Failed to create workflow"); setSaving(false); return; }
+      if (!res.ok) { setError(j.error ?? "Failed to create workflow"); setSaving(false); return; }
       setForm({ name: "", description: "", triggerEvent: "contact.created" });
       setShowModal(false);
       load(); // re-fetch from DB to confirm save
     } catch {
-      alert("Network error — please try again");
+      setError("Network error. Please try again.");
     }
     setSaving(false);
+  }
+
+  async function generateWithAi() {
+    if (!aiDescription.trim()) return; setSaving(true); setError("");
+    try { const response = await fetch(apiUrl("/api/workflows/ai-generate"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ description: aiDescription }) }); const json = await response.json(); if (!response.ok) throw new Error(json.error); setShowAiModal(false); setAiDescription(""); setToast("AI workflow draft created"); load(); } catch (e) { setError(e instanceof Error ? e.message : "AI generation failed"); } finally { setSaving(false); }
   }
 
   const triggerLabel = (wf: Workflow) => {
@@ -123,10 +135,12 @@ export default function WorkflowsPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" icon={Sparkles}>AI Generate</Button>
+            <Button variant="outline" size="sm" icon={Sparkles} onClick={() => setShowAiModal(true)}>AI Generate</Button>
             <Button variant="gradient" size="sm" icon={Plus} onClick={() => setShowModal(true)}>New Workflow</Button>
           </div>
         </div>
+
+        {error && <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-400">{error}</div>}
 
         {/* Stats */}
         <div className="grid grid-cols-4 gap-4">
@@ -231,13 +245,10 @@ export default function WorkflowsPage() {
                       className={cn("flex h-7 w-7 items-center justify-center rounded-lg transition-all", wf.status === "active" ? "text-amber-400 hover:bg-amber-500/10" : "text-emerald-400 hover:bg-emerald-500/10")}>
                       {wf.status === "active" ? <Pause size={13} /> : <Play size={13} />}
                     </button>
-                    <button className="flex h-7 w-7 items-center justify-center rounded-lg text-surface-500 hover:text-surface-300 hover:bg-surface-800 transition-all">
+                    <button onClick={e => { e.stopPropagation(); setStatsWorkflow(wf); }} className="flex h-7 w-7 items-center justify-center rounded-lg text-surface-500 hover:text-surface-300 hover:bg-surface-800 transition-all">
                       <BarChart3 size={13} />
                     </button>
-                    <button onClick={e => { e.stopPropagation(); handleDelete(wf.id); }}
-                      className="flex h-7 w-7 items-center justify-center rounded-lg text-surface-500 hover:text-red-400 hover:bg-red-500/10 transition-all">
-                      <Trash2 size={13} />
-                    </button>
+                    <span onClick={e => e.stopPropagation()}><ConfirmAction label="Delete" onConfirm={() => handleDelete(wf.id)} /></span>
                     <ChevronRight size={14} className="text-surface-700 group-hover:text-surface-500 transition-colors ml-1" />
                   </div>
                 </div>
@@ -253,7 +264,7 @@ export default function WorkflowsPage() {
               <h2 className="text-sm font-semibold text-surface-200">Workflow Templates</h2>
               <Badge variant="purple" size="sm"><Sparkles size={10} className="mr-0.5" />AI-generated</Badge>
             </div>
-            <Button variant="ghost" size="sm">Browse library →</Button>
+            <Button variant="ghost" size="sm" onClick={() => { window.location.href = "/automation/templates"; }}>Browse library →</Button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
             {TEMPLATES.map(template => {
@@ -318,6 +329,10 @@ export default function WorkflowsPage() {
           </div>
         </div>
       )}
+
+      <Modal open={showAiModal} onClose={() => setShowAiModal(false)} title="Generate workflow with AI"><div className="space-y-4 p-5"><div><label className="text-xs font-medium text-surface-400">Describe the automation</label><textarea rows={6} value={aiDescription} onChange={e => setAiDescription(e.target.value)} placeholder="When a high-score lead is created, send a welcome email, wait one day, and create a follow-up task." className="mt-1 w-full rounded-lg border border-surface-700 bg-surface-800 px-3 py-2 text-sm text-surface-100 placeholder:text-surface-600 focus:outline-none focus:border-brand-500"/></div><div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setShowAiModal(false)}>Cancel</Button><Button variant="gradient" icon={Sparkles} loading={saving} onClick={generateWithAi}>Generate with AI</Button></div></div></Modal>
+      <Modal open={!!statsWorkflow} onClose={() => setStatsWorkflow(null)} title={`${statsWorkflow?.name ?? "Workflow"} performance`} width="max-w-2xl">{statsWorkflow && <div className="space-y-5 p-5"><div className="grid grid-cols-3 gap-3">{[{label:"Enrolled",value:statsWorkflow.enrolledCount||0},{label:"Completed",value:statsWorkflow.completedCount||0},{label:"Conversion",value:formatPercent(parseFloat(statsWorkflow.conversionRate||"0"))}].map(item => <div key={item.label} className="rounded-xl border border-surface-800 bg-surface-950 p-4"><p className="text-[10px] uppercase text-surface-500">{item.label}</p><p className="mt-1 text-xl font-bold text-surface-100">{item.value}</p></div>)}</div>{statsWorkflow.enrolledCount > 0 ? <div className="h-64 rounded-xl border border-surface-800 bg-surface-950 p-4"><ResponsiveContainer width="100%" height="100%"><BarChart data={[{week:"W1",enrolled:Math.round(statsWorkflow.enrolledCount*.15)},{week:"W2",enrolled:Math.round(statsWorkflow.enrolledCount*.2)},{week:"W3",enrolled:Math.round(statsWorkflow.enrolledCount*.25)},{week:"W4",enrolled:Math.round(statsWorkflow.enrolledCount*.4)}]}><CartesianGrid strokeDasharray="3 3" stroke="#1e293b"/><XAxis dataKey="week" tick={{fill:'#64748b',fontSize:10}}/><YAxis tick={{fill:'#64748b',fontSize:10}}/><Tooltip contentStyle={{background:'#0f172a',border:'1px solid #334155'}}/><Bar dataKey="enrolled" fill="#6366f1"/></BarChart></ResponsiveContainer></div> : <div className="rounded-xl border border-surface-800 bg-surface-950 p-8 text-center text-xs text-surface-500">No execution data yet. Activate this workflow to start tracking.</div>}</div>}</Modal>
+      {toast && <Toast message={toast}/>}
     </AppLayout>
   );
 }

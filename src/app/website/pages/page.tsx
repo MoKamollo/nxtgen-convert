@@ -1,4 +1,1 @@
-import { ComingSoon } from "@/components/ui/ComingSoon";
-export default function Page() {
-  return <ComingSoon feature="Website Pages" />;
-}
+"use client";import { ContentManagerPage } from "@/components/modules/ContentManagerPage";export default function WebsitePages(){return <ContentManagerPage config={{kind:"page",title:"Website Pages",description:"Create and manage pages for your connected website",api:"/api/website-pages"}}/>}

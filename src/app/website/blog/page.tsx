@@ -1,4 +1,1 @@
-import { ComingSoon } from "@/components/ui/ComingSoon";
-export default function Page() {
-  return <ComingSoon feature="Blog" />;
-}
+"use client";import { ContentManagerPage } from "@/components/modules/ContentManagerPage";export default function Blog(){return <ContentManagerPage config={{kind:"post",title:"Blog",description:"Draft, optimize, and publish long-form content",api:"/api/blog-posts"}}/>}

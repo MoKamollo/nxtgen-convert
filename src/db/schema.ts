@@ -9,6 +9,7 @@ import {
   uuid,
   pgEnum,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
@@ -522,6 +523,138 @@ export const npsResponses = pgTable("nps_responses", {
   feedback: text("feedback"),
   submittedAt: timestamp("submitted_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ─── Extended Product Modules ─────────────────────────────────────────────────
+
+export const subscriptions = pgTable("subscriptions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  contactId: uuid("contact_id").references(() => contacts.id),
+  productId: uuid("product_id").references(() => products.id),
+  status: text("status").default("active"),
+  currentPeriodStart: timestamp("current_period_start").notNull(),
+  currentPeriodEnd: timestamp("current_period_end").notNull(),
+  amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
+  currency: text("currency").default("USD"),
+  interval: text("interval").default("month"),
+  cancelledAt: timestamp("cancelled_at"),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const affiliates = pgTable("affiliates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  contactId: uuid("contact_id").references(() => contacts.id),
+  code: text("code").notNull(),
+  status: text("status").default("active"),
+  commissionRate: decimal("commission_rate", { precision: 5, scale: 2 }).default("10"),
+  totalClicks: integer("total_clicks").default(0),
+  totalConversions: integer("total_conversions").default(0),
+  totalRevenue: decimal("total_revenue", { precision: 15, scale: 2 }).default("0"),
+  totalEarnings: decimal("total_earnings", { precision: 15, scale: 2 }).default("0"),
+  paidEarnings: decimal("paid_earnings", { precision: 15, scale: 2 }).default("0"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("affiliates_org_idx").on(table.organizationId),
+  uniqueIndex("affiliates_org_code_uidx").on(table.organizationId, table.code),
+]);
+
+export const marketingForms = pgTable("marketing_forms", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  fields: jsonb("fields").default([]),
+  status: text("status").default("active"),
+  submissions: integer("submissions").default(0),
+  embedCode: text("embed_code"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const socialPosts = pgTable("social_posts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  content: text("content").notNull(),
+  platforms: text("platforms").array().default([]),
+  status: text("status").default("draft"),
+  scheduledAt: timestamp("scheduled_at"),
+  publishedAt: timestamp("published_at"),
+  mediaUrls: text("media_urls").array().default([]),
+  engagement: jsonb("engagement").default({ likes: 0, comments: 0, shares: 0, clicks: 0 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const kbArticles = pgTable("kb_articles", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  title: text("title").notNull(),
+  slug: text("slug").notNull(),
+  excerpt: text("excerpt"),
+  content: text("content").default(""),
+  category: text("category").default("General"),
+  tags: text("tags").array().default([]),
+  status: text("status").default("draft"),
+  views: integer("views").default(0),
+  helpfulYes: integer("helpful_yes").default(0),
+  helpfulNo: integer("helpful_no").default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("kb_articles_org_slug_uidx").on(table.organizationId, table.slug),
+]);
+
+export const websitePages = pgTable("website_pages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  title: text("title").notNull(),
+  slug: text("slug").notNull(),
+  content: text("content").default(""),
+  status: text("status").default("draft"),
+  metaTitle: text("meta_title"),
+  metaDescription: text("meta_description"),
+  views: integer("views").default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("website_pages_org_slug_uidx").on(table.organizationId, table.slug),
+]);
+
+export const blogPosts = pgTable("blog_posts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  title: text("title").notNull(),
+  slug: text("slug").notNull(),
+  excerpt: text("excerpt"),
+  content: text("content").default(""),
+  category: text("category").default("General"),
+  authorId: uuid("author_id").references(() => users.id),
+  featuredImage: text("featured_image"),
+  status: text("status").default("draft"),
+  metaTitle: text("meta_title"),
+  metaDescription: text("meta_description"),
+  publishedAt: timestamp("published_at"),
+  views: integer("views").default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("blog_posts_org_slug_uidx").on(table.organizationId, table.slug),
+]);
+
+export const automationLogs = pgTable("automation_logs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  event: text("event").notNull(),
+  contactId: uuid("contact_id").references(() => contacts.id),
+  workflowId: uuid("workflow_id").references(() => workflows.id),
+  status: text("status").default("received"),
+  metadata: jsonb("metadata").default({}),
+  triggeredAt: timestamp("triggered_at").defaultNow().notNull(),
 });
 
 // ─── Relations ────────────────────────────────────────────────────────────────
