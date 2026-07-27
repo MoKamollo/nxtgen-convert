@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { organizations } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { signSession, cookieHeader } from "@/lib/session";
+import { signSession, COOKIE_NAME } from "@/lib/session";
 
 const REDIRECT_URI    = "https://convert.nxtgen-stack.com/api/auth/google/callback";
 const SPACE_OAUTH_URL = "https://space.nxtgen-stack.com/api/auth/google-oauth.php";
@@ -99,7 +99,13 @@ export async function GET(request: NextRequest) {
 
     const token    = await signSession({ userId, tenantId, email, name, role, plan });
     const response = NextResponse.redirect(new URL("/dashboard", request.url));
-    response.headers.set("Set-Cookie", cookieHeader(token));
+    response.cookies.set(COOKIE_NAME, token, {
+      httpOnly: true,
+      sameSite: "lax",
+      path:     "/",
+      maxAge:   60 * 60 * 24 * 7,
+      secure:   true,
+    });
     return clearState(response);
 
   } catch (err) {
