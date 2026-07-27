@@ -25,7 +25,7 @@ import {
   List,
   Plus,
   Send,
-  Twitter,
+  X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 type Post = {
@@ -39,7 +39,7 @@ type Post = {
   createdAt: string;
 };
 const icons: Record<string, typeof Twitter> = {
-  twitter: Twitter,
+  twitter: X,
   linkedin: Linkedin,
   facebook: Facebook,
   instagram: Instagram,
