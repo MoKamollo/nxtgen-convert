@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/",
-        destination: "https://nxtgen-stack.com/nxtgen-convert/",
+        destination: "https://nxtgen-stack.com/convert/",
         permanent: true,
       },
     ];
