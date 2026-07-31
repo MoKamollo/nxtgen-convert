@@ -30,7 +30,7 @@ export default function ForgotPassword() {
       className="min-h-screen flex items-center justify-center px-4"
       style={{
         backgroundColor: "#04080F",
-        backgroundImage: 'url("/space-bg.png")',
+        backgroundImage: 'url("/convert-bg.png")',
         backgroundSize: "cover",
         backgroundPosition: "center",
       }}
