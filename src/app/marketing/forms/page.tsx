@@ -233,8 +233,7 @@ export default function MarketingFormsPage() {
 
   return (
     <AppLayout>
-      <div className="relative min-h-full">
-        <div aria-hidden className="pointer-events-none fixed inset-0 z-0" style={{ backgroundImage: "url('/convert-bg.png')", backgroundSize: "cover", backgroundPosition: "center right", opacity: 0.18 }} />
+      <div aria-hidden className="pointer-events-none fixed inset-0 z-0" style={{ backgroundImage: "url('/convert-bg.png')", backgroundSize: "cover", backgroundPosition: "center right", opacity: 0.18 }} />
       <div className="relative z-10 space-y-5 p-6">
         <ModuleHeader
           title="Marketing Forms"
@@ -609,8 +608,6 @@ export default function MarketingFormsPage() {
         </div>
       </Modal>
       {toast && <Toast message={toast} />}
-      </div>
-      </div>
     </AppLayout>
   );
 }
