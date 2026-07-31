@@ -58,13 +58,15 @@ export default function DashboardPage() {
 
   return (
     <AppLayout>
-      <div className="p-6 space-y-6 animate-fade-in">
+      <div className="relative min-h-full">
+        <div aria-hidden className="pointer-events-none fixed inset-0 z-0" style={{ backgroundImage: "url('/convert-bg.png')", backgroundSize: "cover", backgroundPosition: "center right", opacity: 0.18 }} />
+      <div className="relative z-10 p-6 space-y-6 animate-fade-in">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-surface-50 tracking-tight">Revenue Intelligence</h1>
             <p className="text-sm text-surface-500 mt-0.5">
-              {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })} — All systems operational
+              {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })} · All systems operational
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -162,6 +164,7 @@ export default function DashboardPage() {
           <RecentActivityFeed />
           <TopDeals />
         </div>
+      </div>
       </div>
     </AppLayout>
   );
