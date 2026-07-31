@@ -657,6 +657,18 @@ export const automationLogs = pgTable("automation_logs", {
   triggeredAt: timestamp("triggered_at").defaultNow().notNull(),
 });
 
+export const workflowEnrollments = pgTable("workflow_enrollments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  workflowId: uuid("workflow_id").references(() => workflows.id).notNull(),
+  contactId: uuid("contact_id").references(() => contacts.id),
+  dealId: uuid("deal_id").references(() => deals.id),
+  nextStepIndex: integer("next_step_index").notNull().default(0),
+  resumeAt: timestamp("resume_at").notNull(),
+  status: text("status").notNull().default("pending"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // ─── Relations ────────────────────────────────────────────────────────────────
 
 export const organizationsRelations = relations(organizations, ({ many }) => ({
