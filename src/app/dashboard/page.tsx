@@ -58,9 +58,7 @@ export default function DashboardPage() {
 
   return (
     <AppLayout>
-      <div className="relative min-h-full">
-        <div aria-hidden className="pointer-events-none fixed inset-0 z-0" style={{ backgroundImage: "url('/convert-bg.png')", backgroundSize: "cover", backgroundPosition: "center right", opacity: 0.18 }} />
-      <div className="relative z-10 p-6 space-y-6 animate-fade-in">
+      <div className="p-6 space-y-6 animate-fade-in">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -164,7 +162,6 @@ export default function DashboardPage() {
           <RecentActivityFeed />
           <TopDeals />
         </div>
-      </div>
       </div>
     </AppLayout>
   );

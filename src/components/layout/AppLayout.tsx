@@ -14,8 +14,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           collapsed={collapsed}
           onToggleCollapse={() => setCollapsed((c) => !c)}
         />
-        <main className="flex-1 overflow-y-auto bg-surface-950">
-          {children}
+        <main className="relative flex-1 overflow-y-auto bg-surface-950">
+          <div aria-hidden className="pointer-events-none fixed inset-0 z-0" style={{ backgroundImage: "url('/convert-bg.png')", backgroundSize: "cover", backgroundPosition: "center right", opacity: 0.18 }} />
+          <div className="relative z-10">
+            {children}
+          </div>
         </main>
       </div>
     </div>

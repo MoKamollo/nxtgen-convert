@@ -233,8 +233,7 @@ export default function MarketingFormsPage() {
 
   return (
     <AppLayout>
-      <div aria-hidden className="pointer-events-none fixed inset-0 z-0" style={{ backgroundImage: "url('/convert-bg.png')", backgroundSize: "cover", backgroundPosition: "center right", opacity: 0.18 }} />
-      <div className="relative z-10 space-y-5 p-6">
+      <div className="space-y-5 p-6">
         <ModuleHeader
           title="Marketing Forms"
           description="Build and embed lead capture forms"
