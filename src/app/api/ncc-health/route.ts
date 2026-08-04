@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
   const groq     = (process.env.GROQ_API_KEY     ?? "").length > 0;
   const space    = (process.env.SPACE_SSO_SECRET  ?? "").length > 0;
   const spaceApi = (process.env.SPACE_API_SECRET  ?? "").length > 0;
-  const brain    = (process.env.BRAIN_API_KEY     ?? "").length > 0;
+  const brain    = (process.env.BRAIN_SERVICE_TOKEN ?? "").length > 0;
 
   let dbStatus = "error";
   let counts = {
@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(
     {
       status:          "ok",
-      service:         "NxtGen Convert",
+      service:         "NxtGen Convergence",
       version:         "1.0.0",
       database:        dbStatus,
       stripe:          "NOT_OPERATIONAL",
