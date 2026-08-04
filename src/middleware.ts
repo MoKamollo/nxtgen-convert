@@ -33,6 +33,7 @@ const PUBLIC = [
   "/api/nps/submit",
   "/api/track",
   "/api/unsubscribe",
+  "/api/ncc-health",
 ];
 
 function isPublicPath(pathname: string): boolean {
