@@ -18,8 +18,14 @@ export async function POST(request: NextRequest) {
   const id = requestId(request);
   const ip = clientIp(request);
   const userAgent = request.headers.get("user-agent") ?? "unknown";
-  const rate = await checkRateLimit(ip, "auth.login", 10, 15 * 60);
-  if (!rate.allowed) return NextResponse.json({ error: "Too many login attempts. Try again later.", requestId: id }, { status: 429 });
+  let rateLimited = false;
+  try {
+    const rate = await checkRateLimit(ip, "auth.login", 10, 15 * 60);
+    rateLimited = !rate.allowed;
+  } catch (err) {
+    console.error("[auth.login] Rate limit check failed:", err instanceof Error ? err.message : err);
+  }
+  if (rateLimited) return NextResponse.json({ error: "Too many login attempts. Try again later.", requestId: id }, { status: 429 });
 
   try {
     const body = await request.json();
