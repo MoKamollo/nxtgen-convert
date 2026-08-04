@@ -14,6 +14,10 @@ let promise: Promise<SessionUser | null> | null = null;
 async function fetchSession(): Promise<SessionUser | null> {
   try {
     const res = await fetch("/api/users/me");
+    if (res.status === 401 && typeof window !== "undefined") {
+      window.location.href = "/login";
+      return null;
+    }
     if (!res.ok) return null;
     const data = await res.json();
     cached = data;

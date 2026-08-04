@@ -40,11 +40,11 @@ export default function ForgotPassword() {
     >
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center gap-2">
-          <Link href="/">
+          <a href="https://nxtgen-stack.com" style={{ width: 158, height: 32, overflow: "hidden", display: "block" }}>
             <Image src="/nxg-logo-dark.svg" alt="NxtGen" width={160} height={32} className="h-8 w-auto" priority />
-          </Link>
+          </a>
           <span className="text-sm font-semibold tracking-widest text-violet-400 uppercase">
-            Convert
+            Convergence
           </span>
         </div>
         <div className="rounded-2xl border border-[#162440] bg-[#080F1E]/90 p-8 backdrop-blur-sm">
