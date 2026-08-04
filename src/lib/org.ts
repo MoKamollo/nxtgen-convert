@@ -16,12 +16,16 @@ export function apiUrl(path: string, params?: Record<string, string>) {
   return url.pathname + url.search;
 }
 
-export function apiFetch(input: RequestInfo | URL, init: RequestInit = {}) {
+export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}) {
   const method = String(init.method ?? "GET").toUpperCase();
   const headers = new Headers(init.headers);
   if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
     const token = cookieValue(CSRF_COOKIE_NAME);
     if (token) headers.set("x-csrf-token", token);
   }
-  return globalThis.fetch(input, { ...init, headers });
+  const response = await globalThis.fetch(input, { ...init, headers });
+  if (response.status === 401 && typeof window !== "undefined") {
+    window.location.href = "/login";
+  }
+  return response;
 }
