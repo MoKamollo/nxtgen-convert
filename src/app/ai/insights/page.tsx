@@ -3,18 +3,18 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
-import { formatCurrency, cn } from "@/lib/utils";
-import { apiUrl } from "@/lib/org";
+import { cn } from "@/lib/utils";
+import { apiFetch, apiUrl } from "@/lib/org";
 import {
-  Bot, Sparkles, TrendingUp, AlertTriangle, ArrowUpRight, Zap,
-  Brain, Target, Users, DollarSign, RefreshCcw, Star, BarChart3,
-  MessageSquare, Play, Settings, Loader2,
+  Sparkles, TrendingUp, AlertTriangle, ArrowUpRight, Zap,
+  ListChecks, Target, Users, UserMinus, RefreshCcw, Star, BarChart3,
+  MessageSquare, Play, Loader2,
 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, ScatterChart, Scatter, Cell,
+  ResponsiveContainer,
 } from "recharts";
 
 type Contact = {
@@ -26,20 +26,12 @@ type Contact = {
 type Insight = {
   id: string; type: "opportunity" | "churn" | "expansion" | "campaign";
   title: string; body: string; priority: string;
-  contact?: string; impact?: string; action: string;
+  contact?: string; impact?: string; action: string; contactIds?: string[];
 };
 
 type Task = {
   id: string; title: string; priority: string; status: string;
   dueDate: string | null; description: string | null;
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  vip:      "#a78bfa",
-  customer: "#10b981",
-  prospect: "#60a5fa",
-  lead:     "#64748b",
-  churned:  "#f87171",
 };
 
 const TASK_ICONS: Record<string, typeof Zap> = {
@@ -66,37 +58,44 @@ export default function AIInsightsPage() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
 
-  const load = useCallback(() => {
+  const load = useCallback(async () => {
     setLoading(true);
-    Promise.all([
-      fetch(apiUrl("/api/contacts")).then(r => r.json()),
-      fetch(apiUrl("/api/ai-insights")).then(r => r.json()),
-      fetch(apiUrl("/api/tasks")).then(r => r.json()),
-    ]).then(([contactsRes, insightsRes, tasksRes]) => {
+    try {
+      const [contactsRes, insightsRes, tasksRes] = await Promise.all([
+        apiFetch(apiUrl("/api/contacts")).then(r => r.json()),
+        apiFetch(apiUrl("/api/ai-insights")).then(r => r.json()),
+        apiFetch(apiUrl("/api/tasks")).then(r => r.json()),
+      ]);
       const contactList: Contact[] = (contactsRes.data ?? []).map((c: Contact) => ({ ...c, score: c.score ?? 0 }));
       setContacts(contactList);
       setInsights(insightsRes.data ?? []);
       const now = new Date();
       const overdue = (tasksRes.data ?? []).filter((t: Task) => t.status !== "completed" && t.dueDate && new Date(t.dueDate) < now);
       setTasks(overdue.slice(0, 4));
-      setSelectedContact(contactList.sort((a: Contact, b: Contact) => (b.score ?? 0) - (a.score ?? 0))[0] ?? null);
+      setSelectedContact([...contactList].sort((a: Contact, b: Contact) => (b.score ?? 0) - (a.score ?? 0))[0] ?? null);
+    } finally {
       setLoading(false);
-    }).catch(() => setLoading(false));
+    }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { void Promise.resolve().then(load); }, [load]);
 
-  const triggerAnalysis = () => {
+  const triggerAnalysis = async () => {
     setIsAnalyzing(true);
-    load();
-    setTimeout(() => setIsAnalyzing(false), 2000);
+    try {
+      await load();
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   const topContacts   = [...contacts].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).slice(0, 4);
   const churnInsights = insights.filter(i => i.type === "churn");
   const expandInsights = insights.filter(i => i.type === "expansion");
-  const churnContacts = contacts.filter(c => c.status === "churned").slice(0, 3);
-  const vipNoDeals    = contacts.filter(c => c.status === "vip").slice(0, 3);
+  const allChurnContacts = contacts.filter(c => c.status === "churned");
+  const churnContacts = allChurnContacts.slice(0, 3);
+  const expansionIds = new Set(expandInsights.flatMap((insight) => insight.contactIds ?? []));
+  const vipNoDeals = contacts.filter((contact) => expansionIds.has(contact.id)).slice(0, 3);
 
   // Score distribution histogram
   const scoreBuckets = [
@@ -107,13 +106,6 @@ export default function AIInsightsPage() {
     { range: "81–100",count: contacts.filter(c => c.score > 80).length },
   ];
 
-  // Scatter: x=score, y=jitter derived from id length % 50 for visual spread
-  const scatterData = contacts.map(c => ({
-    x: c.score ?? 0,
-    y: (c.id.charCodeAt(0) + c.id.charCodeAt(1)) % 50,
-    name: `${c.firstName} ${c.lastName ?? ""}`.trim(),
-    status: c.status,
-  }));
 
   return (
     <AppLayout>
@@ -122,31 +114,31 @@ export default function AIInsightsPage() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-brand-500">
-              <Brain size={18} className="text-white" />
+              <ListChecks size={18} className="text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-surface-50 tracking-tight">AI Intelligence Center</h1>
-              <p className="text-sm text-surface-500 mt-0.5">Autonomous insights powered by your revenue data</p>
+              <h1 className="text-2xl font-bold text-surface-50 tracking-tight">Operational Signals</h1>
+              <p className="text-sm text-surface-500 mt-0.5">Explainable rule matches from current CRM records</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-xs font-medium text-emerald-400">AI Engine Active</span>
+              <span className="text-xs font-medium text-emerald-400">Rule Engine Active</span>
             </div>
             <Button variant="gradient" size="sm" icon={RefreshCcw} loading={isAnalyzing} onClick={triggerAnalysis}>
-              Run Analysis
+              Refresh Signals
             </Button>
           </div>
         </div>
 
-        {/* AI Metrics — real counts, honest zeros */}
+        {/* Current CRM evidence */}
         <div className="grid grid-cols-4 gap-4">
           {[
-            { label: "Total Contacts",       value: loading ? "—" : contacts.length.toLocaleString(),  sub: "In your CRM",           color: "text-brand-400",   bg: "bg-brand-500/10",   icon: Brain },
-            { label: "Active Insights",      value: loading ? "—" : insights.length,                   sub: "From your data",        color: "text-emerald-400", bg: "bg-emerald-500/10", icon: Target },
-            { label: "Churn Risk Contacts",  value: loading ? "—" : churnContacts.length,              sub: "Status: churned",       color: "text-amber-400",   bg: "bg-amber-500/10",   icon: DollarSign },
-            { label: "High Score Leads",     value: loading ? "—" : contacts.filter(c => c.score >= 70).length, sub: "Score ≥ 70", color: "text-violet-400",  bg: "bg-violet-500/10",  icon: Sparkles },
+            { label: "Total Contacts",       value: loading ? "—" : contacts.length.toLocaleString(),  sub: "In your CRM",           color: "text-brand-400",   bg: "bg-brand-500/10",   icon: ListChecks },
+            { label: "Active Signals",      value: loading ? "—" : insights.length,                   sub: "From your data",        color: "text-emerald-400", bg: "bg-emerald-500/10", icon: Target },
+            { label: "Churned Contacts",  value: loading ? "—" : allChurnContacts.length,              sub: "Status: churned",       color: "text-amber-400",   bg: "bg-amber-500/10",   icon: UserMinus },
+            { label: "High Score Leads",     value: loading ? "—" : contacts.filter(c => c.status === "lead" && c.score >= 70).length, sub: "Score ≥ 70", color: "text-violet-400",  bg: "bg-violet-500/10",  icon: Sparkles },
           ].map(stat => {
             const Icon = stat.icon;
             return (
@@ -164,16 +156,16 @@ export default function AIInsightsPage() {
 
         {/* Main Grid */}
         <div className="grid grid-cols-3 gap-5">
-          {/* AI Action Queue (overdue tasks) */}
+          {/* Action queue from overdue tasks */}
           <div className="col-span-2 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <h2 className="text-sm font-semibold text-surface-200">AI Action Queue</h2>
+                <h2 className="text-sm font-semibold text-surface-200">Action Queue</h2>
                 {!loading && tasks.length > 0 && (
                   <Badge variant="purple" size="sm">{tasks.length} overdue</Badge>
                 )}
               </div>
-              <Button variant="ghost" size="sm">View all</Button>
+              <Button variant="ghost" size="sm" onClick={() => router.push("/crm/tasks")}>View all</Button>
             </div>
 
             {loading ? (
@@ -209,10 +201,7 @@ export default function AIInsightsPage() {
                         )}
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <Button variant="gradient" size="sm" icon={Play}>Review</Button>
-                        <button className="flex h-7 w-7 items-center justify-center rounded-lg text-surface-600 hover:text-surface-300 hover:bg-surface-800 transition-all">
-                          <Settings size={13} />
-                        </button>
+                        <Button variant="gradient" size="sm" icon={Play} onClick={() => router.push("/crm/tasks")}>Review</Button>
                       </div>
                     </div>
                   </div>
@@ -220,7 +209,7 @@ export default function AIInsightsPage() {
               })
             )}
 
-            {/* AI insights (opportunity / campaign types) */}
+            {/* Rule-based recommendations */}
             {!loading && insights.filter(i => i.type === "opportunity" || i.type === "campaign").length > 0 && (
               <div className="space-y-3 pt-1">
                 <h2 className="text-xs font-semibold text-surface-500 uppercase tracking-wider">Recommended Actions</h2>
@@ -244,7 +233,7 @@ export default function AIInsightsPage() {
 
           {/* Lead Scoring Panel */}
           <div className="space-y-4">
-            <h2 className="text-sm font-semibold text-surface-200">AI Lead Scoring</h2>
+            <h2 className="text-sm font-semibold text-surface-200">Configured Lead Scoring</h2>
             {loading ? (
               <div className="flex items-center justify-center py-8"><Loader2 size={16} className="animate-spin text-surface-500" /></div>
             ) : topContacts.length === 0 ? (
@@ -279,7 +268,7 @@ export default function AIInsightsPage() {
                     <p className="text-[10px] text-surface-500 mb-3">{selectedContact.jobTitle ?? selectedContact.status}</p>
                     <div className="space-y-2">
                       {[
-                        { label: "AI Score",    value: `${selectedContact.score ?? 0}/100` },
+                        { label: "Score",       value: `${selectedContact.score ?? 0}/100` },
                         { label: "Status",      value: selectedContact.status },
                         { label: "Email",       value: selectedContact.email ?? "—" },
                       ].map(row => (
@@ -306,17 +295,17 @@ export default function AIInsightsPage() {
           </div>
         </div>
 
-        {/* Predictive Insights */}
+        {/* Current customer status and expansion candidates */}
         <div className="grid grid-cols-2 gap-5">
-          {/* Churn Predictions */}
+          {/* Recorded churn */}
           <div className="rounded-xl border border-surface-800 bg-surface-900/50 p-5">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h3 className="text-sm font-semibold text-surface-200">Churn Risk</h3>
+                <h3 className="text-sm font-semibold text-surface-200">Recorded Churn</h3>
                 <p className="text-xs text-surface-500 mt-0.5">Contacts with churned status</p>
               </div>
               {churnContacts.length > 0 && (
-                <Badge variant="danger" size="sm">{churnContacts.length} at risk</Badge>
+                <Badge variant="danger" size="sm">{churnContacts.length} recorded</Badge>
               )}
             </div>
             {loading ? (
@@ -324,7 +313,7 @@ export default function AIInsightsPage() {
             ) : churnContacts.length === 0 && churnInsights.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-6 gap-2 text-center">
                 <AlertTriangle size={20} className="text-surface-600" />
-                <p className="text-xs text-surface-400">No churn risk detected</p>
+                <p className="text-xs text-surface-400">No contacts are currently marked churned</p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -332,7 +321,7 @@ export default function AIInsightsPage() {
                   <div key={insight.id} className="rounded-lg border border-red-500/20 bg-red-500/5 p-3">
                     <p className="text-xs font-semibold text-surface-100 mb-1">{insight.title}</p>
                     <p className="text-[11px] text-surface-500 leading-relaxed">{insight.body}</p>
-                    <Button variant="danger" size="xs" className="mt-2">Intervene</Button>
+                    <Button variant="danger" size="xs" className="mt-2" onClick={() => router.push("/crm/contacts?status=churned")}>Review contacts</Button>
                   </div>
                 ))}
                 {churnContacts.map(c => (
@@ -348,7 +337,7 @@ export default function AIInsightsPage() {
                     <div className="text-right shrink-0">
                       <p className="text-sm font-bold text-red-400">Churned</p>
                     </div>
-                    <Button variant="outline" size="xs">Intervene</Button>
+                    <Button variant="outline" size="xs" onClick={() => router.push(`/crm/contacts/${c.id}`)}>Open profile</Button>
                   </div>
                 ))}
               </div>
@@ -380,7 +369,7 @@ export default function AIInsightsPage() {
                   <div key={insight.id} className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
                     <p className="text-xs font-semibold text-surface-100 mb-1">{insight.title}</p>
                     <p className="text-[11px] text-surface-500 leading-relaxed">{insight.body}</p>
-                    <Button variant="success" size="xs" className="mt-2">Create proposal</Button>
+                    <Button variant="success" size="xs" className="mt-2" onClick={() => router.push("/crm/deals")}>Review candidates</Button>
                   </div>
                 ))}
                 {vipNoDeals.map(c => (
@@ -393,7 +382,7 @@ export default function AIInsightsPage() {
                         <span className="text-[10px] text-emerald-400 font-semibold">No active deal</span>
                       </div>
                     </div>
-                    <Button variant="success" size="xs">Create deal</Button>
+                    <Button variant="success" size="xs" onClick={() => router.push("/crm/deals")}>Open deals</Button>
                   </div>
                 ))}
               </div>
@@ -401,13 +390,13 @@ export default function AIInsightsPage() {
           </div>
         </div>
 
-        {/* Contact Intelligence Map */}
+        {/* Score evidence */}
         {contacts.length > 0 && (
           <div className="grid grid-cols-2 gap-5">
             {/* Score Distribution */}
             <div className="rounded-xl border border-surface-800 bg-surface-900/50 p-5">
               <h3 className="text-sm font-semibold text-surface-200 mb-1">Score Distribution</h3>
-              <p className="text-xs text-surface-500 mb-4">Contacts by AI score range</p>
+              <p className="text-xs text-surface-500 mb-4">Contacts by configured score range</p>
               <div className="h-48">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={scoreBuckets} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
@@ -421,43 +410,20 @@ export default function AIInsightsPage() {
               </div>
             </div>
 
-            {/* Contact Intelligence Scatter */}
+            {/* Scoring methodology */}
             <div className="rounded-xl border border-surface-800 bg-surface-900/50 p-5">
-              <h3 className="text-sm font-semibold text-surface-200 mb-1">Contact Intelligence Map</h3>
-              <p className="text-xs text-surface-500 mb-4">AI Score by contact</p>
-              <div className="h-48">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ScatterChart margin={{ top: 4, right: 8, bottom: 4, left: -20 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                    <XAxis type="number" dataKey="x" name="Score" tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} label={{ value: "Score", position: "insideBottom", offset: -2, fill: "#475569", fontSize: 10 }} />
-                    <YAxis type="number" dataKey="y" tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} hide />
-                    <Tooltip cursor={{ strokeDasharray: "3 3", stroke: "#334155" }}
-                      contentStyle={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8, fontSize: 12 }}
-                      content={({ payload }) => {
-                        if (!payload?.length) return null;
-                        const d = payload[0].payload as { name: string; x: number };
-                        return (
-                          <div className="rounded-lg border border-surface-700 bg-surface-900 p-2 text-xs">
-                            <p className="font-semibold text-surface-200">{d.name}</p>
-                            <p className="text-surface-400">Score: {d.x}</p>
-                          </div>
-                        );
-                      }} />
-                    <Scatter data={scatterData}>
-                      {scatterData.map((entry, i) => (
-                        <Cell key={i} fill={STATUS_COLORS[entry.status] ?? "#64748b"} fillOpacity={0.8} />
-                      ))}
-                    </Scatter>
-                  </ScatterChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="flex items-center gap-4 mt-2 justify-center flex-wrap">
-                {Object.entries(STATUS_COLORS).map(([status, color]) => (
-                  <div key={status} className="flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
-                    <span className="text-xs text-surface-500 capitalize">{status}</span>
-                  </div>
-                ))}
+              <h3 className="text-sm font-semibold text-surface-200 mb-1">Scoring Methodology</h3>
+              <p className="text-xs text-surface-500 mb-4">The displayed score is produced by the tenant-configured deterministic scoring model.</p>
+              <div className="space-y-3 text-xs">
+                <div className="rounded-lg border border-surface-800 bg-surface-950/40 p-3">
+                  <p className="font-semibold text-surface-200">What it means</p>
+                  <p className="mt-1 text-surface-500">A higher score means more configured positive factors matched. It is not a purchase probability, forecast, or machine-learning prediction.</p>
+                </div>
+                <div className="rounded-lg border border-surface-800 bg-surface-950/40 p-3">
+                  <p className="font-semibold text-surface-200">Current evidence</p>
+                  <p className="mt-1 text-surface-500">Status, available contact details, and approved custom-field rules contribute only when they are present in the contact record.</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => router.push("/ai/scoring")}>Review scoring model</Button>
               </div>
             </div>
           </div>

@@ -10,7 +10,7 @@ import {
   StatusBadge,
   Toast,
 } from "@/components/modules/ModulePrimitives";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import { Activity, Beaker, Play, Plus, Radio, Workflow } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 type Trigger = {
@@ -36,7 +36,7 @@ export default function Triggers() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch(apiUrl("/api/automation/triggers"));
+      const r = await apiFetch(apiUrl("/api/automation/triggers"));
       const j = await r.json();
       if (!r.ok) throw new Error(j.error);
       setData(j.data);
@@ -48,7 +48,7 @@ export default function Triggers() {
     }
   }, []);
   useEffect(() => {
-    load();
+    void Promise.resolve().then(load);
   }, [load]);
   const filtered = useMemo(
     () =>
@@ -62,7 +62,7 @@ export default function Triggers() {
   const create = async (t: Trigger) => {
     setBusy(t.event);
     try {
-      const r = await fetch(apiUrl("/api/workflows"), {
+      const r = await apiFetch(apiUrl("/api/workflows"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -85,7 +85,7 @@ export default function Triggers() {
   const test = async () => {
     setBusy("manual-test");
     try {
-      const r = await fetch(apiUrl("/api/automation/trigger"), {
+      const r = await apiFetch(apiUrl("/api/automation/trigger"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ event: "manual" }),

@@ -3,11 +3,10 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { ConfirmAction } from "@/components/modules/ModulePrimitives";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Avatar } from "@/components/ui/Avatar";
 import { timeAgo, cn } from "@/lib/utils";
-import { apiUrl } from "@/lib/org";
-import { Plus, Mail, Phone, Calendar, FileText, MessageSquare, Clock, CheckCircle, X, Loader2, Activity, Trash2 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { apiFetch, apiUrl } from "@/lib/org";
+import { Plus, Mail, Phone, Calendar, FileText, MessageSquare, Clock, CheckCircle, X, Loader2, Activity } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 
 type ActivityRow = {
   id: string; type: string; subject: string; body: string | null;
@@ -33,28 +32,28 @@ export default function ActivitiesPage() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ type: "call", subject: "", body: "", outcome: "", duration: "" });
 
-  const load = () => {
+  const load = useCallback(() => {
     setLoading(true);
-    fetch(apiUrl("/api/activities")).then(r => r.json())
+    apiFetch(apiUrl("/api/activities")).then(r => r.json())
       .then(j => { setActivities(j.data ?? []); setLoading(false); })
       .catch(() => setLoading(false));
-  };
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { void Promise.resolve().then(load); }, [load]);
 
   const filtered = activities.filter(a => typeFilter === "all" || a.type === typeFilter);
   const countByType = (t: string) => activities.filter(a => a.type === t).length;
 
   const handleDelete = async (id: string) => {
     setActivities(prev => prev.filter(a => a.id !== id));
-    await fetch(apiUrl(`/api/activities/${id}`), { method: "DELETE" });
+    await apiFetch(apiUrl(`/api/activities/${id}`), { method: "DELETE" });
   };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.subject.trim()) return;
     setSaving(true);
-    await fetch(apiUrl("/api/activities"), {
+    await apiFetch(apiUrl("/api/activities"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

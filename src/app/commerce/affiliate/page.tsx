@@ -16,7 +16,7 @@ import {
   StatusBadge,
   Toast,
 } from "@/components/modules/ModulePrimitives";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import {
   BadgeDollarSign,
   Copy,
@@ -71,8 +71,8 @@ export default function AffiliatePage() {
     setLoading(true);
     try {
       const [r, c] = await Promise.all([
-        fetch(apiUrl("/api/affiliates")),
-        fetch(apiUrl("/api/contacts", { limit: "200" })),
+        apiFetch(apiUrl("/api/affiliates")),
+        apiFetch(apiUrl("/api/contacts", { limit: "200" })),
       ]);
       const [j, cj] = await Promise.all([r.json(), c.json()]);
       if (!r.ok) throw new Error(j.error);
@@ -85,7 +85,7 @@ export default function AffiliatePage() {
     }
   }, []);
   useEffect(() => {
-    load();
+    void Promise.resolve().then(load);
   }, [load]);
   const rows = useMemo(
     () =>
@@ -114,7 +114,7 @@ export default function AffiliatePage() {
   const save = async () => {
     setSaving(true);
     try {
-      const r = await fetch(apiUrl("/api/affiliates"), {
+      const r = await apiFetch(apiUrl("/api/affiliates"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -132,7 +132,7 @@ export default function AffiliatePage() {
     }
   };
   const patch = async (id: string, body: object) => {
-    const r = await fetch(apiUrl(`/api/affiliates/${id}`), {
+    const r = await apiFetch(apiUrl(`/api/affiliates/${id}`), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -146,7 +146,7 @@ export default function AffiliatePage() {
     await load();
   };
   const del = async (id: string) => {
-    await fetch(apiUrl(`/api/affiliates/${id}`), { method: "DELETE" });
+    await apiFetch(apiUrl(`/api/affiliates/${id}`), { method: "DELETE" });
     setToast("Affiliate removed");
     await load();
   };

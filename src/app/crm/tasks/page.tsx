@@ -3,9 +3,9 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import { Plus, CheckSquare, Clock, CheckCircle2, X, Loader2 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type Task = {
   id: string; title: string; description: string | null;
@@ -26,21 +26,21 @@ export default function TasksPage() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ title: "", description: "", priority: "medium", dueDate: "" });
 
-  const load = () => {
+  const load = useCallback(() => {
     setLoading(true);
-    fetch(apiUrl("/api/tasks")).then(r => r.json())
+    apiFetch(apiUrl("/api/tasks")).then(r => r.json())
       .then(j => { setTasks(j.data ?? []); setLoading(false); })
       .catch(() => setLoading(false));
-  };
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { void Promise.resolve().then(load); }, [load]);
 
   const todo = tasks.filter(t => t.status === "todo" || t.status === "in_progress");
   const done = tasks.filter(t => t.status === "completed");
 
   const toggleDone = async (task: Task) => {
     const newStatus = task.status === "completed" ? "todo" : "completed";
-    await fetch(apiUrl(`/api/tasks/${task.id}`), {
+    await apiFetch(apiUrl(`/api/tasks/${task.id}`), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: newStatus }),
@@ -49,7 +49,7 @@ export default function TasksPage() {
   };
 
   const handleDelete = async (id: string) => {
-    await fetch(apiUrl(`/api/tasks/${id}`), { method: "DELETE" });
+    await apiFetch(apiUrl(`/api/tasks/${id}`), { method: "DELETE" });
     setTasks(prev => prev.filter(t => t.id !== id));
   };
 
@@ -57,7 +57,7 @@ export default function TasksPage() {
     e.preventDefault();
     if (!form.title.trim()) return;
     setSaving(true);
-    await fetch("/api/tasks", {
+    await apiFetch("/api/tasks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

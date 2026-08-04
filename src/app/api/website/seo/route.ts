@@ -1,3 +1,4 @@
+import { withApiGuard } from "@/lib/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { blogPosts, websitePages } from "@/db/schema";
@@ -15,7 +16,7 @@ function audit(item: SeoItem, duplicateTitles: Set<string>) {
   const wordCount = (item.content ?? "").trim().split(/\s+/).filter(Boolean).length; if (wordCount > 300) score += 10; else issues.push("Content has fewer than 300 words");
   return { ...item, url: `/${item.kind === "post" ? "blog/" : ""}${item.slug}`, titleLength, descLength, wordCount, score, issues };
 }
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   const orgId = request.headers.get("x-tenant-id"); if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   try {
     const [pages, posts] = await Promise.all([db.select().from(websitePages).where(eq(websitePages.organizationId, orgId)), db.select().from(blogPosts).where(eq(blogPosts.organizationId, orgId))]);
@@ -25,3 +26,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ data: { pages: data, overallScore: data.length ? Math.round(data.reduce((s, item) => s + item.score, 0) / data.length) : 0, issuesFound: data.reduce((s, item) => s + item.issues.length, 0), criticalIssues: data.reduce((s, item) => s + item.issues.filter(issue => issue.startsWith("Missing")).length, 0) } });
   } catch { return NextResponse.json({ error: "Failed to run SEO audit" }, { status: 500 }); }
 }
+
+export const GET = withApiGuard(GETHandler);

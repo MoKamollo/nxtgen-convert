@@ -1,4 +1,6 @@
 "use client";
+import Image from "next/image";
+import { apiFetch } from "@/lib/org";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -31,6 +33,10 @@ import {
   Share2,
   Hash,
   LogOut,
+  HeartHandshake,
+  Gift,
+  SlidersHorizontal,
+  ShieldCheck,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useSession } from "@/hooks/useSession";
@@ -42,6 +48,7 @@ interface NavItem {
   badge?: string | number;
   badgeVariant?: "default" | "success" | "warning" | "danger" | "info" | "purple";
   children?: NavItem[];
+  minimumRole?: "admin";
 }
 
 const navigation: NavItem[] = [
@@ -87,16 +94,16 @@ const navigation: NavItem[] = [
     ],
   },
   {
-    label: "AI Platform",
+    label: "Intelligence",
     href: "/ai",
     icon: Bot,
     badge: "New",
     badgeVariant: "success",
     children: [
-      { label: "AI Insights", href: "/ai/insights", icon: Star },
+      { label: "Operational Signals", href: "/ai/insights", icon: Star },
       { label: "AI Assistant", href: "/ai/assistant", icon: Bot },
       { label: "Lead Scoring", href: "/ai/scoring", icon: Star },
-      { label: "Predictions", href: "/ai/predictions", icon: Cpu },
+      { label: "Customer Signals", href: "/ai/predictions", icon: Cpu },
     ],
   },
   {
@@ -108,6 +115,7 @@ const navigation: NavItem[] = [
       { label: "Funnels", href: "/marketing/funnels", icon: TrendingUp },
       { label: "Social", href: "/marketing/social", icon: Share2 },
       { label: "Forms", href: "/marketing/forms", icon: FileText },
+      { label: "Segments & Personalization", href: "/personalization", icon: SlidersHorizontal },
     ],
   },
   {
@@ -137,6 +145,16 @@ const navigation: NavItem[] = [
     icon: MessageSquare,
   },
   {
+    label: "Customer Success",
+    href: "/customer-success",
+    icon: HeartHandshake,
+  },
+  {
+    label: "Loyalty",
+    href: "/loyalty",
+    icon: Gift,
+  },
+  {
     label: "Support",
     href: "/support",
     icon: HeadphonesIcon,
@@ -159,6 +177,12 @@ const navigation: NavItem[] = [
     ],
   },
   {
+    label: "Operations",
+    href: "/operations",
+    icon: ShieldCheck,
+    minimumRole: "admin",
+  },
+  {
     label: "Settings",
     href: "/settings",
     icon: Settings,
@@ -176,6 +200,8 @@ export function Sidebar({ collapsed }: SidebarProps) {
   const userName  = session?.user?.name  ?? session?.org?.name ?? "…";
   const userTitle = session?.user?.jobTitle ?? session?.role ?? "";
   const [badgeOverrides, setBadgeOverrides] = useState<Record<string, number>>({});
+  const canViewAdministrativeOperations = session?.role === "admin" || session?.role === "owner";
+  const visibleNavigation = navigation.filter((item) => item.minimumRole !== "admin" || canViewAdministrativeOperations);
 
   useEffect(() => {
     fetch("/api/sidebar-counts")
@@ -193,7 +219,7 @@ export function Sidebar({ collapsed }: SidebarProps) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   async function handleLogout() {
-    await fetch("/api/auth/logout", { method: "POST" });
+    await apiFetch("/api/auth/logout", { method: "POST" });
     window.location.href = "/login";
   }
 
@@ -217,25 +243,25 @@ export function Sidebar({ collapsed }: SidebarProps) {
     >
       {/* Logo */}
       <div className="flex h-14 shrink-0 items-center border-b border-surface-800 px-4">
-        <a href="/" className="flex items-center gap-2">
+        <Link href="/" className="flex items-center gap-2">
           {collapsed ? (
             <div style={{ width: 28, height: 28, borderRadius: 6, background: "linear-gradient(135deg,#6366f1,#3b9eff)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
               <span style={{ color: "#fff", fontWeight: 800, fontSize: 13, fontFamily: "sans-serif" }}>N</span>
             </div>
           ) : (
             <>
-              <img src="/nxtgen-logo.png" alt="NxtGen Convergence" style={{ height: 28, width: "auto", flexShrink: 0 }} />
+              <Image src="/nxtgen-logo.png" alt="NxtGen Convert" width={140} height={28} className="h-7 w-auto shrink-0" priority />
               <span className="text-xs font-semibold tracking-widest text-brand-400 uppercase ml-1">
-                Convergence
+                Convert
               </span>
             </>
           )}
-        </a>
+        </Link>
       </div>
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
-        {navigation.map((item) => (
+        {visibleNavigation.map((item) => (
           <NavItemComponent
             key={item.href}
             item={item}

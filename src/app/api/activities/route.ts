@@ -1,3 +1,4 @@
+import { withApiGuard } from "@/lib/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { activities, companies, contacts, deals } from "@/db/schema";
@@ -46,7 +47,7 @@ async function assertTenantLinks(orgId: string, contactId: string | null, compan
   }
 }
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   const orgId = request.headers.get("x-tenant-id");
   if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
@@ -107,7 +108,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+async function POSTHandler(request: NextRequest) {
   const orgId = request.headers.get("x-tenant-id");
   const userId = request.headers.get("x-user-id");
   if (!orgId || !userId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
@@ -161,7 +162,7 @@ export async function POST(request: NextRequest) {
       const resend = new Resend(process.env.RESEND_API_KEY);
       const recipientName = `${contact.firstName}${contact.lastName ? ` ${contact.lastName}` : ""}`;
       const result = await resend.emails.send({
-        from: process.env.EMAIL_FROM ?? "NxtGen Convergence <noreply@nxtgen-stack.com>",
+        from: process.env.EMAIL_FROM ?? "NxtGen Convert <noreply@nxtgen-stack.com>",
         to: contact.email,
         subject,
         html: `<!DOCTYPE html><html><body style="margin:0;background:#0a0f1e"><div style="font-family:Inter,Arial,sans-serif;max-width:600px;margin:0 auto;padding:40px 24px;color:#e2e8f0"><p style="color:#94a3b8;margin-bottom:16px">Hi ${escapeHtml(recipientName)},</p><div style="color:#cbd5e1;line-height:1.7;white-space:pre-wrap">${escapeHtml(content)}</div></div></body></html>`,
@@ -203,3 +204,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: message }, { status: isClientError ? 400 : 500 });
   }
 }
+
+export const GET = withApiGuard(GETHandler);
+export const POST = withApiGuard(POSTHandler);

@@ -1,17 +1,18 @@
 "use client";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ConfirmAction } from "@/components/modules/ModulePrimitives";
-import { Badge, StatusBadge } from "@/components/ui/Badge";
+import { StatusBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
 import { Card } from "@/components/ui/Card";
 import { formatCurrency, cn } from "@/lib/utils";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import {
-  Plus, Search, Filter, TrendingUp, Calendar,
+  Plus, Search, TrendingUp, Calendar,
   Layers, BarChart3, X, Loader2, ChevronRight, Pencil,
 } from "lucide-react";
-import { useState, useEffect, useCallback } from "react";
+import { Suspense, useState, useEffect, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 type Deal = {
   id: string; name: string; value: number; stage: string; probability: number;
@@ -30,12 +31,14 @@ const KANBAN_STAGES = [
 
 const STAGE_IDS = KANBAN_STAGES.map(s => s.id);
 
-export default function DealsPage() {
+function DealsPageInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [view, setView] = useState<"kanban" | "table">("kanban");
   const [search, setSearch] = useState("");
   const [allDeals, setAllDeals] = useState<Deal[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
+  const [showModal, setShowModal] = useState(() => searchParams.get("create") === "true");
   const [editDeal, setEditDeal] = useState<Deal | null>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
@@ -45,15 +48,12 @@ export default function DealsPage() {
 
   const load = useCallback(() => {
     setLoading(true);
-    fetch(apiUrl("/api/deals")).then(r => r.json())
+    apiFetch(apiUrl("/api/deals")).then(r => r.json())
       .then(j => { setAllDeals(j.data ?? []); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
 
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("create") === "true") setShowModal(true);
-  }, []);
+  useEffect(() => { void Promise.resolve().then(load); }, [load]);
 
   const openEdit = (deal: Deal) => {
     setEditDeal(deal);
@@ -85,13 +85,13 @@ export default function DealsPage() {
       expectedCloseDate: form.expectedCloseDate || null,
     };
     if (editDeal) {
-      await fetch(apiUrl(`/api/deals/${editDeal.id}`), {
+      await apiFetch(apiUrl(`/api/deals/${editDeal.id}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
     } else {
-      await fetch(apiUrl("/api/deals"), {
+      await apiFetch(apiUrl("/api/deals"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -105,7 +105,7 @@ export default function DealsPage() {
   const moveStage = async (id: string, newStage: string) => {
     const stageConf = KANBAN_STAGES.find(s => s.id === newStage);
     setAllDeals(prev => prev.map(d => d.id === id ? { ...d, stage: newStage, probability: stageConf?.prob ?? d.probability } : d));
-    await fetch(apiUrl(`/api/deals/${id}`), {
+    await apiFetch(apiUrl(`/api/deals/${id}`), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ stage: newStage, probability: stageConf?.prob }),
@@ -114,7 +114,7 @@ export default function DealsPage() {
 
   const handleDelete = async (id: string) => {
     setAllDeals(prev => prev.filter(d => d.id !== id));
-    await fetch(apiUrl(`/api/deals/${id}`), { method: "DELETE" });
+    await apiFetch(apiUrl(`/api/deals/${id}`), { method: "DELETE" });
   };
 
   const filtered = allDeals.filter(d =>
@@ -142,7 +142,7 @@ export default function DealsPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" icon={BarChart3}>Forecast</Button>
+            <Button variant="outline" size="sm" icon={BarChart3} onClick={() => router.push("/analytics/pipeline")}>Pipeline Analytics</Button>
             <Button variant="gradient" size="sm" icon={Plus} onClick={() => setShowModal(true)}>New Deal</Button>
           </div>
         </div>
@@ -168,9 +168,6 @@ export default function DealsPage() {
             <input type="text" placeholder="Search deals..." value={search} onChange={e => setSearch(e.target.value)}
               className="w-full h-8 rounded-lg border border-surface-700 bg-surface-900 pl-9 pr-3 text-xs text-surface-200 placeholder:text-surface-600 focus:outline-none focus:border-brand-500" />
           </div>
-          <button className="flex items-center gap-1.5 h-8 rounded-lg border border-surface-700 bg-surface-900 px-3 text-xs text-surface-400 hover:text-surface-200 hover:border-surface-600 transition-all">
-            <Filter size={13} /> Filters
-          </button>
           <div className="flex-1" />
           <div className="flex items-center rounded-lg border border-surface-700 bg-surface-900 p-0.5">
             <button onClick={() => setView("kanban")} className={cn("flex items-center gap-1.5 h-7 px-3 rounded-md text-xs transition-all", view === "kanban" ? "bg-surface-700 text-surface-100" : "text-surface-500 hover:text-surface-300")}>
@@ -395,5 +392,13 @@ export default function DealsPage() {
         </div>
       )}
     </AppLayout>
+  );
+}
+
+export default function DealsPage() {
+  return (
+    <Suspense fallback={null}>
+      <DealsPageInner />
+    </Suspense>
   );
 }

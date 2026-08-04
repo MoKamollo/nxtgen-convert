@@ -1,7 +1,8 @@
+import { withApiGuard } from "@/lib/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { CampaignSendError, sendCampaign } from "@/lib/campaign-send";
 
-export async function POST(
+async function POSTHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -19,3 +20,5 @@ export async function POST(
     );
   }
 }
+
+export const POST = withApiGuard(POSTHandler);

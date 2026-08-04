@@ -9,7 +9,7 @@ import {
   StatGrid,
   StatusBadge,
 } from "@/components/modules/ModulePrimitives";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import { CalendarClock, CircleDollarSign, Layers3, Scale } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -65,7 +65,7 @@ export default function PipelineAnalytics() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch(apiUrl("/api/analytics/pipeline"));
+      const r = await apiFetch(apiUrl("/api/analytics/pipeline"));
       const j = await r.json();
       if (!r.ok) throw new Error(j.error);
       setData(j.data);
@@ -76,7 +76,7 @@ export default function PipelineAnalytics() {
     }
   }, []);
   useEffect(() => {
-    load();
+    void Promise.resolve().then(load);
   }, [load]);
   const rows = useMemo(
     () =>

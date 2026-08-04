@@ -1,3 +1,4 @@
+import { withApiGuard } from "@/lib/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { emailTemplates } from "@/db/schema";
@@ -11,7 +12,7 @@ const SYSTEM_TEMPLATES = [
   { id: "system:newsletter", name: "Monthly Newsletter", subject: "Your monthly update", preheader: "News, insights, and highlights", category: "newsletter", tags: ["newsletter"], htmlContent: "<h1>This month at our company</h1><p>Here are the highlights.</p><p><a href=\"{{unsubscribe_url}}\">Unsubscribe</a></p>" },
 ].map(template => ({ ...template, isSystem: true, createdAt: null, updatedAt: null }));
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   const orgId = request.headers.get("x-tenant-id");
   if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   try {
@@ -22,7 +23,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+async function POSTHandler(request: NextRequest) {
   const orgId = request.headers.get("x-tenant-id");
   const userId = request.headers.get("x-user-id");
   if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
@@ -46,3 +47,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Failed to create email template" }, { status: 500 });
   }
 }
+
+export const GET = withApiGuard(GETHandler);
+export const POST = withApiGuard(POSTHandler);

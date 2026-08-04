@@ -1,19 +1,17 @@
+import { and, eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { organizations } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { webhookEndpoints } from "@/db/schema";
+import { withApiGuard } from "@/lib/api-guard";
 
-export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const orgId = request.headers.get("x-tenant-id");
-  if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  try {
-    const { id } = await params;
-    const [org] = await db.select({ settings: organizations.settings }).from(organizations).where(eq(organizations.id, orgId)).limit(1);
-    if (!org) return NextResponse.json({ error: "Organization not found" }, { status: 404 });
-    const settings = (org.settings ?? {}) as Record<string, unknown> & { webhooks?: Array<{ id: string }> };
-    await db.update(organizations).set({ settings: { ...settings, webhooks: (settings.webhooks ?? []).filter(item => item.id !== id) }, updatedAt: new Date() }).where(eq(organizations.id, orgId));
-    return NextResponse.json({ ok: true });
-  } catch {
-    return NextResponse.json({ error: "Failed to delete webhook" }, { status: 500 });
-  }
+async function DELETEHandler(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const orgId = request.headers.get("x-tenant-id")!;
+  const { id } = await params;
+  const [endpoint] = await db.update(webhookEndpoints).set({ active: false, healthStatus: "disabled", updatedAt: new Date() }).where(and(
+    eq(webhookEndpoints.id, id), eq(webhookEndpoints.organizationId, orgId),
+  )).returning({ id: webhookEndpoints.id });
+  if (!endpoint) return NextResponse.json({ error: "Webhook not found" }, { status: 404 });
+  return NextResponse.json({ ok: true });
 }
+
+export const DELETE = withApiGuard(DELETEHandler);

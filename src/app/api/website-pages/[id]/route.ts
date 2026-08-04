@@ -1,8 +1,9 @@
+import { withApiGuard } from "@/lib/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { websitePages } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
-export async function PATCH(
+async function PATCHHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -39,7 +40,7 @@ export async function PATCH(
     );
   }
 }
-export async function DELETE(
+async function DELETEHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -64,3 +65,6 @@ export async function DELETE(
     );
   }
 }
+
+export const PATCH = withApiGuard(PATCHHandler);
+export const DELETE = withApiGuard(DELETEHandler);

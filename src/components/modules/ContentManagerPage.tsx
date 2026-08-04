@@ -16,7 +16,7 @@ import {
   textareaClass,
   Toast,
 } from "@/components/modules/ModulePrimitives";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import { Edit3, Eye, FileText, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 type Item = {
@@ -66,7 +66,7 @@ export function ContentManagerPage({ config }: { config: Config }) {
     setLoading(true);
     setError("");
     try {
-      const r = await fetch(apiUrl(config.api));
+      const r = await apiFetch(apiUrl(config.api));
       const j = await r.json();
       if (!r.ok) throw new Error(j.error);
       setData(j.data || []);
@@ -81,7 +81,7 @@ export function ContentManagerPage({ config }: { config: Config }) {
     }
   }, [config.api, config.title]);
   useEffect(() => {
-    load();
+    void Promise.resolve().then(load);
   }, [load]);
   const rows = useMemo(
     () =>
@@ -116,8 +116,7 @@ export function ContentManagerPage({ config }: { config: Config }) {
   const save = async () => {
     setSaving(true);
     try {
-      const r = await fetch(
-        apiUrl(editing ? `${config.api}/${editing.id}` : config.api),
+      const r = await apiFetch(apiUrl(editing ? `${config.api}/${editing.id}` : config.api),
         {
           method: editing ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },
@@ -138,7 +137,7 @@ export function ContentManagerPage({ config }: { config: Config }) {
     }
   };
   const patchStatus = async (item: Item) => {
-    const r = await fetch(apiUrl(`${config.api}/${item.id}`), {
+    const r = await apiFetch(apiUrl(`${config.api}/${item.id}`), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -154,7 +153,7 @@ export function ContentManagerPage({ config }: { config: Config }) {
     await load();
   };
   const del = async (id: string) => {
-    await fetch(apiUrl(`${config.api}/${id}`), { method: "DELETE" });
+    await apiFetch(apiUrl(`${config.api}/${id}`), { method: "DELETE" });
     setToast("Deleted");
     await load();
   };

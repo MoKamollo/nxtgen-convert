@@ -1,10 +1,11 @@
+import { withApiGuard } from "@/lib/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { npsResponses, contacts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
-export async function POST(request: NextRequest) {
+async function POSTHandler(request: NextRequest) {
   const orgId = request.headers.get("x-tenant-id");
   if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
@@ -35,12 +36,12 @@ export async function POST(request: NextRequest) {
       const { Resend } = await import("resend");
       const resend = new Resend(process.env.RESEND_API_KEY);
       await resend.emails.send({
-        from: process.env.EMAIL_FROM ?? "NxtGen Convergence <noreply@nxtgen-stack.com>",
+        from: process.env.EMAIL_FROM ?? "NxtGen Convert <noreply@nxtgen-stack.com>",
         to: contact.email,
         subject: "Quick question — how likely are you to recommend us?",
         html: `<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Quick question from NxtGen Convergence</title></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Quick question from NxtGen Convert</title></head>
 <body style="margin:0;padding:0;background:#f1f5f9;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif">
 <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f1f5f9;padding:40px 16px">
   <tr><td align="center">
@@ -58,7 +59,7 @@ export async function POST(request: NextRequest) {
         <td style="padding:40px 40px 32px">
           <h1 style="color:#0f172a;font-size:22px;font-weight:700;margin:0 0 12px;line-height:1.3">Hi ${contact.firstName},</h1>
           <p style="color:#475569;font-size:15px;line-height:1.8;margin:0 0 8px">We'd love to hear how we're doing.</p>
-          <p style="color:#475569;font-size:15px;line-height:1.8;margin:0 0 32px">On a scale of <strong>0 to 10</strong>, how likely are you to recommend <strong style="color:#0f172a">NxtGen Convergence</strong> to a friend or colleague?</p>
+          <p style="color:#475569;font-size:15px;line-height:1.8;margin:0 0 32px">On a scale of <strong>0 to 10</strong>, how likely are you to recommend <strong style="color:#0f172a">NxtGen Convert</strong> to a friend or colleague?</p>
 
           <table width="100%" cellpadding="0" cellspacing="0" border="0">
             <tr>
@@ -97,3 +98,5 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ ok: true, token, surveyUrl });
 }
+
+export const POST = withApiGuard(POSTHandler);

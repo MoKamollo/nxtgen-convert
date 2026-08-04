@@ -1,10 +1,11 @@
+import { withApiGuard } from "@/lib/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { organizations } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { normalizeScoringModel } from "@/lib/scoring";
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   const orgId = request.headers.get("x-tenant-id");
   if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   try {
@@ -22,7 +23,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function PATCH(request: NextRequest) {
+async function PATCHHandler(request: NextRequest) {
   const orgId = request.headers.get("x-tenant-id");
   if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   try {
@@ -45,3 +46,6 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "Failed to save scoring model" }, { status: 500 });
   }
 }
+
+export const GET = withApiGuard(GETHandler);
+export const PATCH = withApiGuard(PATCHHandler);

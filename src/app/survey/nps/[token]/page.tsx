@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
+import Image from "next/image";
 
 export default function NpsSurveyPage() {
   const { token } = useParams<{ token: string }>();
@@ -48,7 +49,7 @@ export default function NpsSurveyPage() {
   const feedbackLabel = score === null
     ? "Any additional comments? (optional)"
     : score >= 9
-      ? "What do you love most about NxtGen Convergence?"
+      ? "What do you love most about NxtGen Convert?"
       : score <= 6
         ? "What could we do better?"
         : "What would make us a 10 for you?";
@@ -61,7 +62,7 @@ export default function NpsSurveyPage() {
 
         {/* Header bar */}
         <div style={{ background: "linear-gradient(135deg,#1e1b4b,#312e81)", padding: "24px 36px", display: "flex", alignItems: "center", gap: 12 }}>
-          <img src="/nxtgen-logo.png" alt="NxtGen" style={{ height: 32, width: "auto", display: "block" }} />
+          <Image src="/nxtgen-logo.png" alt="NxtGen" width={160} height={32} className="h-8 w-auto" priority />
         </div>
 
         {/* Content */}

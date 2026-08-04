@@ -16,7 +16,7 @@ import {
   textareaClass,
   Toast,
 } from "@/components/modules/ModulePrimitives";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import {
   CalendarDays,
   Camera,
@@ -38,6 +38,9 @@ type Post = {
   mediaUrls: string[] | null;
   createdAt: string;
 };
+const CURRENT_MONTH_START = new Date();
+CURRENT_MONTH_START.setDate(1);
+
 const icons: Record<string, typeof X> = {
   twitter: X,
   linkedin: Briefcase,
@@ -66,7 +69,7 @@ export default function Social() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch(apiUrl("/api/social-posts"));
+      const r = await apiFetch(apiUrl("/api/social-posts"));
       const j = await r.json();
       if (!r.ok) throw new Error(j.error);
       setData(j.data);
@@ -79,7 +82,7 @@ export default function Social() {
     }
   }, []);
   useEffect(() => {
-    load();
+    void Promise.resolve().then(load);
   }, [load]);
   const rows = useMemo(
     () =>
@@ -109,7 +112,7 @@ export default function Social() {
           .map((x) => x.trim())
           .filter(Boolean),
       };
-      const r = await fetch(apiUrl("/api/social-posts"), {
+      const r = await apiFetch(apiUrl("/api/social-posts"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -127,12 +130,11 @@ export default function Social() {
     }
   };
   const del = async (id: string) => {
-    await fetch(apiUrl(`/api/social-posts/${id}`), { method: "DELETE" });
+    await apiFetch(apiUrl(`/api/social-posts/${id}`), { method: "DELETE" });
     setToast("Post deleted");
     await load();
   };
-  const monthStart = new Date();
-  monthStart.setDate(1);
+  const monthStart = CURRENT_MONTH_START;
   const days = Array.from(
     {
       length: new Date(

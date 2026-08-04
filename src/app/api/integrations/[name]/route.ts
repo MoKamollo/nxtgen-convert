@@ -1,22 +1,46 @@
+import { and, eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { organizations } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { connectorAccounts } from "@/db/schema";
+import { withApiGuard } from "@/lib/api-guard";
 
-const ALLOWED = new Set(["gmail", "outlook", "slack", "google-calendar", "zapier", "postgresql", "webhooks"]);
+const CATALOG: Record<string, { implementation: string; required: string[] }> = {
+  gmail: { implementation: "oauth_required", required: ["Google OAuth client", "Gmail API access", "owner authorization"] },
+  outlook: { implementation: "oauth_required", required: ["Microsoft Entra application", "Graph API permissions", "owner authorization"] },
+  slack: { implementation: "oauth_required", required: ["Slack application", "bot scopes", "workspace authorization"] },
+  "google-calendar": { implementation: "oauth_required", required: ["Google OAuth client", "Calendar API access", "owner authorization"] },
+  zapier: { implementation: "partner_approval_required", required: ["Zapier integration approval or private app credentials"] },
+  postgresql: { implementation: "credential_required", required: ["Dedicated least privilege database credentials", "network allowlist"] },
+};
 
-export async function POST(request: NextRequest, { params }: { params: Promise<{ name: string }> }) {
-  const orgId = request.headers.get("x-tenant-id");
-  if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  try {
-    const { name } = await params;
-    if (!ALLOWED.has(name)) return NextResponse.json({ error: "Unsupported integration" }, { status: 400 });
-    const [org] = await db.select({ settings: organizations.settings }).from(organizations).where(eq(organizations.id, orgId)).limit(1);
-    if (!org) return NextResponse.json({ error: "Organization not found" }, { status: 404 });
-    const settings = (org.settings ?? {}) as Record<string, unknown> & { integrations?: Record<string, boolean> };
-    await db.update(organizations).set({ settings: { ...settings, integrations: { ...(settings.integrations ?? {}), [name]: true } }, updatedAt: new Date() }).where(eq(organizations.id, orgId));
-    return NextResponse.json({ ok: true });
-  } catch {
-    return NextResponse.json({ error: "Failed to update integration" }, { status: 500 });
-  }
+async function GETHandler(request: NextRequest, { params }: { params: Promise<{ name: string }> }) {
+  const orgId = request.headers.get("x-tenant-id")!;
+  const { name } = await params;
+  const catalog = CATALOG[name];
+  if (!catalog) return NextResponse.json({ error: "Unsupported integration" }, { status: 404 });
+  const [account] = await db.select({
+    provider: connectorAccounts.provider,
+    status: connectorAccounts.status,
+    healthStatus: connectorAccounts.healthStatus,
+    displayName: connectorAccounts.displayName,
+    scopes: connectorAccounts.scopes,
+    lastVerifiedAt: connectorAccounts.lastVerifiedAt,
+    lastSyncAt: connectorAccounts.lastSyncAt,
+    lastError: connectorAccounts.lastError,
+  }).from(connectorAccounts).where(and(eq(connectorAccounts.organizationId, orgId), eq(connectorAccounts.provider, name))).limit(1);
+  return NextResponse.json({ data: account ?? { provider: name, status: "disconnected", healthStatus: "not_configured" }, requirements: catalog.required });
 }
+
+async function POSTHandler(_request: NextRequest, { params }: { params: Promise<{ name: string }> }) {
+  const { name } = await params;
+  const catalog = CATALOG[name];
+  if (!catalog) return NextResponse.json({ error: "Unsupported integration" }, { status: 404 });
+  return NextResponse.json({
+    error: "This connector cannot be marked connected without completing provider authentication and validation.",
+    status: "blocked_external_dependency",
+    requirements: catalog.required,
+  }, { status: 409 });
+}
+
+export const GET = withApiGuard(GETHandler);
+export const POST = withApiGuard(POSTHandler);

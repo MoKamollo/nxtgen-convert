@@ -4,7 +4,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import { cn, timeAgo } from "@/lib/utils";
 import {
   Bell,
@@ -16,7 +16,8 @@ import {
   Search,
   Send,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 interface EmailItem {
   id: string;
@@ -53,11 +54,18 @@ interface Conversation {
 type Tab = "all" | "email" | "notification" | "unread";
 type Selected = { kind: "email"; key: string } | { kind: "notification"; id: string } | null;
 
-export default function InboxPage() {
+function InboxPageInner() {
+  const searchParams = useSearchParams();
+  const requestedNotificationId = searchParams.get("notification");
   const [emails, setEmails] = useState<EmailItem[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [tab, setTab] = useState<Tab>("all");
+  const [tab, setTab] = useState<Tab>(() => {
+    if (searchParams.get("unread") === "true") return "unread";
+    if (searchParams.get("type") === "notification") return "notification";
+    if (searchParams.get("type") === "email") return "email";
+    return "all";
+  });
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Selected>(null);
   const [reply, setReply] = useState("");
@@ -72,7 +80,7 @@ export default function InboxPage() {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(apiUrl("/api/inbox"), { cache: "no-store" });
+      const response = await apiFetch(apiUrl("/api/inbox"), { cache: "no-store" });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Failed to load inbox");
       setEmails(payload.emails ?? []);
@@ -85,19 +93,7 @@ export default function InboxPage() {
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("type") === "notification") setTab("notification");
-    if (params.get("type") === "email") setTab("email");
-    if (params.get("unread") === "true") setTab("unread");
-  }, []);
-
-  useEffect(() => {
-    const id = new URLSearchParams(window.location.search).get("notification");
-    if (id && notifications.some((item) => item.id === id)) setSelected({ kind: "notification", id });
-  }, [notifications]);
+  useEffect(() => { void Promise.resolve().then(load); }, [load]);
 
   const conversations = useMemo(() => {
     const groups = new Map<string, EmailItem[]>();
@@ -122,17 +118,10 @@ export default function InboxPage() {
     }).sort((a, b) => new Date(b.lastMessage.createdAt).getTime() - new Date(a.lastMessage.createdAt).getTime());
   }, [emails]);
 
-  const selectedConversation = selected?.kind === "email"
-    ? conversations.find((conversation) => conversation.key === selected.key) ?? null
-    : null;
-  const selectedNotification = selected?.kind === "notification"
-    ? notifications.find((notification) => notification.id === selected.id) ?? null
-    : null;
-
   const listItems = useMemo(() => {
     const query = search.trim().toLowerCase();
     const emailItems = conversations
-      .filter((conversation) => tab !== "notification")
+      .filter(() => tab !== "notification")
       .filter((conversation) => tab !== "unread" || conversation.unread)
       .filter((conversation) => !query || [conversation.contactName, conversation.contactEmail, conversation.lastMessage.subject, conversation.lastMessage.body]
         .filter(Boolean).some((value) => String(value).toLowerCase().includes(query)))
@@ -146,18 +135,28 @@ export default function InboxPage() {
     return [...emailItems, ...notificationItems].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [conversations, notifications, search, tab]);
 
-  useEffect(() => {
-    if (selected) return;
-    const first = listItems[0];
-    if (first?.kind === "email") setSelected({ kind: "email", key: first.conversation.key });
-    if (first?.kind === "notification") setSelected({ kind: "notification", id: first.notification.id });
-  }, [listItems, selected]);
+  const requestedSelection: Selected = requestedNotificationId && notifications.some((item) => item.id === requestedNotificationId)
+    ? { kind: "notification", id: requestedNotificationId }
+    : null;
+  const firstItem = listItems[0];
+  const fallbackSelection: Selected = firstItem?.kind === "email"
+    ? { kind: "email", key: firstItem.conversation.key }
+    : firstItem?.kind === "notification"
+      ? { kind: "notification", id: firstItem.notification.id }
+      : null;
+  const effectiveSelected = selected ?? requestedSelection ?? fallbackSelection;
+  const selectedConversation = effectiveSelected?.kind === "email"
+    ? conversations.find((conversation) => conversation.key === effectiveSelected.key) ?? null
+    : null;
+  const selectedNotification = effectiveSelected?.kind === "notification"
+    ? notifications.find((notification) => notification.id === effectiveSelected.id) ?? null
+    : null;
 
   async function markRead(kind: "email" | "notification" | "all", id?: string) {
     setMarking(true);
     setError("");
     try {
-      const response = await fetch(apiUrl("/api/inbox/read"), {
+      const response = await apiFetch(apiUrl("/api/inbox/read"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: kind, id, all: kind === "all" }),
@@ -200,7 +199,7 @@ export default function InboxPage() {
     setError("");
     setSuccess("");
     try {
-      const response = await fetch(apiUrl("/api/activities"), {
+      const response = await apiFetch(apiUrl("/api/activities"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -281,7 +280,7 @@ export default function InboxPage() {
                     onClick={() => void selectItem({ kind: "email", key: item.conversation.key })}
                     className={cn(
                       "w-full p-3 text-left transition-colors hover:bg-surface-800/40",
-                      selected?.kind === "email" && selected.key === item.conversation.key && "bg-brand-500/8 border-l-2 border-brand-500",
+                      effectiveSelected?.kind === "email" && effectiveSelected.key === item.conversation.key && "bg-brand-500/8 border-l-2 border-brand-500",
                     )}
                   >
                     <div className="flex items-start gap-2.5">
@@ -303,7 +302,7 @@ export default function InboxPage() {
                     onClick={() => void selectItem({ kind: "notification", id: item.notification.id })}
                     className={cn(
                       "w-full p-3 text-left transition-colors hover:bg-surface-800/40",
-                      selected?.kind === "notification" && selected.id === item.notification.id && "bg-brand-500/8 border-l-2 border-brand-500",
+                      effectiveSelected?.kind === "notification" && effectiveSelected.id === item.notification.id && "bg-brand-500/8 border-l-2 border-brand-500",
                     )}
                   >
                     <div className="flex items-start gap-2.5">
@@ -423,5 +422,13 @@ export default function InboxPage() {
         </main>
       </div>
     </AppLayout>
+  );
+}
+
+export default function InboxPage() {
+  return (
+    <Suspense fallback={null}>
+      <InboxPageInner />
+    </Suspense>
   );
 }

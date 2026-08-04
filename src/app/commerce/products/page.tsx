@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { formatCurrency, cn } from "@/lib/utils";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import {
   Plus, Search, ShoppingBag, DollarSign, Package,
   RefreshCcw, Trash2, Loader2, X, ToggleLeft, ToggleRight,
@@ -30,13 +30,13 @@ export default function ProductsPage() {
   });
 
   const load = useCallback(() => {
-    fetch(apiUrl("/api/products"))
+    apiFetch(apiUrl("/api/products"))
       .then(r => r.json())
       .then(j => { setProducts(j.data ?? []); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { void Promise.resolve().then(load); }, [load]);
 
   const filtered = products.filter(p =>
     !search || p.name.toLowerCase().includes(search.toLowerCase())
@@ -51,7 +51,7 @@ export default function ProductsPage() {
     e.preventDefault();
     if (!form.name.trim() || !form.price) return;
     setSaving(true);
-    const res = await fetch(apiUrl("/api/products"), {
+    const res = await apiFetch(apiUrl("/api/products"), {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: form.name.trim(), description: form.description,
@@ -71,7 +71,7 @@ export default function ProductsPage() {
 
   async function toggleActive(p: Product) {
     setProducts(prev => prev.map(x => x.id === p.id ? { ...x, isActive: !x.isActive } : x));
-    await fetch(apiUrl(`/api/products/${p.id}`), {
+    await apiFetch(apiUrl(`/api/products/${p.id}`), {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ isActive: !p.isActive }),
     });
@@ -79,7 +79,7 @@ export default function ProductsPage() {
 
   async function handleDelete(id: string) {
     setProducts(prev => prev.filter(p => p.id !== id));
-    await fetch(apiUrl(`/api/products/${id}`), { method: "DELETE" });
+    await apiFetch(apiUrl(`/api/products/${id}`), { method: "DELETE" });
   }
 
   return (

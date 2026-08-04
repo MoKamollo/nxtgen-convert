@@ -1,3 +1,4 @@
+import { withApiGuard } from "@/lib/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { campaigns } from "@/db/schema";
@@ -31,7 +32,7 @@ function normalizeUploadedRecipients(value: unknown) {
   return recipients.slice(0, 10_000);
 }
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   const orgId = request.headers.get("x-tenant-id");
   if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
@@ -61,7 +62,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+async function POSTHandler(request: NextRequest) {
   const orgId = request.headers.get("x-tenant-id");
   const userId = request.headers.get("x-user-id");
   if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
@@ -199,3 +200,6 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+export const GET = withApiGuard(GETHandler);
+export const POST = withApiGuard(POSTHandler);

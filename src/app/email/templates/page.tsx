@@ -18,7 +18,7 @@ import {
   Toast,
 } from "@/components/modules/ModulePrimitives";
 import { Button } from "@/components/ui/Button";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import { Copy, FileCode2, Layers, Mail, Pencil, Plus, Send } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -44,6 +44,15 @@ type TemplateForm = {
   category: string;
   tags: string;
 };
+
+async function fetchEmailTemplates(): Promise<Template[]> {
+  const response = await apiFetch(apiUrl("/api/email-templates"));
+  const json = await response.json();
+  if (!response.ok) {
+    throw new Error(json.error ?? "Failed to load templates");
+  }
+  return Array.isArray(json.data) ? json.data : [];
+}
 
 const blank: TemplateForm = {
   name: "",
@@ -74,10 +83,7 @@ export default function EmailTemplatesPage() {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(apiUrl("/api/email-templates"));
-      const json = await response.json();
-      if (!response.ok) throw new Error(json.error || "Failed to load templates");
-      setItems(json.data ?? []);
+      setItems(await fetchEmailTemplates());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load templates");
     } finally {
@@ -86,8 +92,24 @@ export default function EmailTemplatesPage() {
   }, []);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    let active = true;
+    void fetchEmailTemplates()
+      .then((templates) => {
+        if (!active) return;
+        setItems(templates);
+        setError("");
+      })
+      .catch((cause: unknown) => {
+        if (!active) return;
+        setError(cause instanceof Error ? cause.message : "Failed to load templates");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const filtered = useMemo(() => {
     return items
@@ -129,8 +151,7 @@ export default function EmailTemplatesPage() {
     setSaving(true);
     setError("");
     try {
-      const response = await fetch(
-        apiUrl(editing ? `/api/email-templates/${editing.id}` : "/api/email-templates"),
+      const response = await apiFetch(apiUrl(editing ? `/api/email-templates/${editing.id}` : "/api/email-templates"),
         {
           method: editing ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },
@@ -156,7 +177,7 @@ export default function EmailTemplatesPage() {
   }
 
   async function remove(id: string) {
-    const response = await fetch(apiUrl(`/api/email-templates/${id}`), {
+    const response = await apiFetch(apiUrl(`/api/email-templates/${id}`), {
       method: "DELETE",
     });
     if (!response.ok) {
@@ -168,7 +189,7 @@ export default function EmailTemplatesPage() {
     setToast("Template deleted");
   }
 
-  function useTemplate(item: Template) {
+  function applyTemplate(item: Template) {
     sessionStorage.setItem("nxtgen-email-template", JSON.stringify(item));
     router.push(`/email/campaigns?templateId=${encodeURIComponent(item.id)}`);
   }
@@ -305,7 +326,7 @@ export default function EmailTemplatesPage() {
                     variant="gradient"
                     size="sm"
                     className="flex-1"
-                    onClick={() => useTemplate(item)}
+                    onClick={() => applyTemplate(item)}
                   >
                     Use
                   </Button>

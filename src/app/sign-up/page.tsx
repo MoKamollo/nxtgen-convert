@@ -1,4 +1,7 @@
 "use client";
+import Image from "next/image";
+import Link from "next/link";
+import { apiFetch } from "@/lib/org";
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, Lock, User, Eye, EyeOff, ArrowRight, AlertCircle, CheckCircle } from "lucide-react";
@@ -19,7 +22,7 @@ function SignUpForm() {
     setError("");
     setLoading(true);
     try {
-      const res  = await fetch("/api/auth/register", {
+      const res  = await apiFetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, email, password }),
@@ -45,9 +48,9 @@ function SignUpForm() {
       <p className="text-sm text-[#64748b] mb-1">We sent a verification link to</p>
       <p className="text-sm font-medium text-white mb-6">{email}</p>
       <p className="text-xs text-[#475569] mb-6">Click the link to activate your account, then sign in here.</p>
-      <a href="/login" className="w-full h-10 rounded-lg bg-gradient-to-r from-[#7B6EF6] to-[#3B9EFF] text-sm font-semibold text-white flex items-center justify-center gap-2 hover:opacity-90 transition-opacity">
+      <Link href="/login" className="w-full h-10 rounded-lg bg-gradient-to-r from-[#7B6EF6] to-[#3B9EFF] text-sm font-semibold text-white flex items-center justify-center gap-2 hover:opacity-90 transition-opacity">
         Go to sign in <ArrowRight size={14} />
-      </a>
+      </Link>
     </div>
   );
 
@@ -56,7 +59,7 @@ function SignUpForm() {
       <h1 className="text-xl font-bold text-white mb-1">Create your account</h1>
       <p className="text-sm text-[#64748b] mb-6">
         Already have an account?{" "}
-        <a href="/login" className="text-[#7B6EF6] hover:underline font-medium">Sign in</a>
+        <Link href="/login" className="text-[#7B6EF6] hover:underline font-medium">Sign in</Link>
       </p>
 
       {error && (
@@ -146,9 +149,9 @@ export default function SignUpPage() {
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center gap-2 mb-8">
           <a href="https://nxtgen-stack.com/convert/" style={{ width: 158, height: 32, overflow: "hidden", display: "block" }}>
-            <img src="/nxg-logo-dark.svg" alt="NxtGen" style={{ height: 32, width: "auto" }} />
+            <Image src="/nxg-logo-dark.svg" alt="NxtGen" width={160} height={32} className="h-8 w-auto" priority />
           </a>
-          <span className="text-sm font-semibold tracking-widest text-violet-400 uppercase">Convergence</span>
+          <span className="text-sm font-semibold tracking-widest text-violet-400 uppercase">Convert</span>
         </div>
         <Suspense>
           <SignUpForm />

@@ -28,9 +28,15 @@ export function useSession() {
   const [loading, setLoading] = useState(!cached);
 
   useEffect(() => {
-    if (cached) { setSession(cached); setLoading(false); return; }
+    if (cached) return;
     if (!promise) promise = fetchSession();
-    promise.then((s) => { setSession(s); setLoading(false); });
+    let active = true;
+    promise.then((value) => {
+      if (!active) return;
+      setSession(value);
+      setLoading(false);
+    });
+    return () => { active = false; };
   }, []);
 
   return { session, loading };

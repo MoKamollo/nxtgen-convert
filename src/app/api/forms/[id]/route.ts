@@ -1,3 +1,4 @@
+import { withApiGuard } from "@/lib/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { marketingForms } from "@/db/schema";
@@ -6,7 +7,7 @@ import { and, eq } from "drizzle-orm";
 
 const STATUSES = new Set(["active", "inactive"]);
 
-export async function PATCH(
+async function PATCHHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -57,7 +58,7 @@ export async function PATCH(
   }
 }
 
-export async function DELETE(
+async function DELETEHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -76,3 +77,6 @@ export async function DELETE(
     return NextResponse.json({ error: "Failed to delete form" }, { status: 500 });
   }
 }
+
+export const PATCH = withApiGuard(PATCHHandler);
+export const DELETE = withApiGuard(DELETEHandler);

@@ -1,4 +1,5 @@
 "use client";
+import Image from "next/image";
 import { cn, getInitials } from "@/lib/utils";
 
 const sizeClasses = {
@@ -49,13 +50,16 @@ export function Avatar({
   return (
     <div className="relative inline-flex shrink-0">
       {src ? (
-        <img
+        <Image
           src={src}
           alt={name}
+          width={64}
+          height={64}
+          unoptimized
           className={cn(
             "rounded-full object-cover ring-1 ring-surface-700",
             sizeClasses[size],
-            className
+            className,
           )}
         />
       ) : (

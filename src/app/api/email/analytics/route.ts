@@ -1,3 +1,4 @@
+import { withApiGuard } from "@/lib/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { analyticsEvents, campaigns } from "@/db/schema";
@@ -7,21 +8,21 @@ function statsOf(value: unknown) {
   const stats = (value ?? {}) as Record<string, unknown>;
   return {
     sent: Number(stats.sent ?? 0), delivered: Number(stats.delivered ?? 0), opened: Number(stats.opened ?? 0),
-    clicked: Number(stats.clicked ?? 0), bounced: Number(stats.bounced ?? 0), unsubscribed: Number(stats.unsubscribed ?? 0),
+    clicked: Number(stats.clicked ?? 0), bounced: Number(stats.bounced ?? 0), failed: Number(stats.failed ?? 0), unsubscribed: Number(stats.unsubscribed ?? 0),
   };
 }
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   const orgId = request.headers.get("x-tenant-id");
   if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   try {
     const campaignRows = await db.select().from(campaigns).where(and(eq(campaigns.organizationId, orgId), eq(campaigns.type, "email"))).orderBy(desc(campaigns.sentAt));
-    const statKeys = ["sent", "delivered", "opened", "clicked", "bounced", "unsubscribed"] as const;
+    const statKeys = ["sent", "delivered", "opened", "clicked", "bounced", "failed", "unsubscribed"] as const;
     const totals = campaignRows.reduce((acc, campaign) => {
       const current = statsOf(campaign.stats);
       for (const key of statKeys) acc[key] += current[key];
       return acc;
-    }, { sent: 0, delivered: 0, opened: 0, clicked: 0, bounced: 0, unsubscribed: 0 });
+    }, { sent: 0, delivered: 0, opened: 0, clicked: 0, bounced: 0, failed: 0, unsubscribed: 0 });
 
     const start = new Date(); start.setUTCDate(start.getUTCDate() - 29); start.setUTCHours(0, 0, 0, 0);
     const events = await db.select({ event: analyticsEvents.event, properties: analyticsEvents.properties, createdAt: analyticsEvents.createdAt })
@@ -58,3 +59,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Failed to fetch email analytics" }, { status: 500 });
   }
 }
+
+export const GET = withApiGuard(GETHandler);

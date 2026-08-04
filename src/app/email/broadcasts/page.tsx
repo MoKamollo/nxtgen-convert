@@ -17,7 +17,7 @@ import {
   Toast,
 } from "@/components/modules/ModulePrimitives";
 import { Button } from "@/components/ui/Button";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import {
   CalendarClock,
   Eye,
@@ -27,7 +27,8 @@ import {
   Plus,
   Send,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 type Broadcast = {
   id: string;
@@ -152,13 +153,14 @@ function readRecipients(text: string): UploadedRecipient[] {
   return recipients;
 }
 
-export default function BroadcastsPage() {
+function BroadcastsPageInner() {
+  const searchParams = useSearchParams();
   const [items, setItems] = useState<Broadcast[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [tab, setTab] = useState("all");
   const [search, setSearch] = useState("");
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(() => searchParams.get("create") === "true");
   const [step, setStep] = useState(1);
   const [form, setForm] = useState<BroadcastForm>(INITIAL_FORM);
   const [uploadedRecipients, setUploadedRecipients] = useState<UploadedRecipient[]>([]);
@@ -172,7 +174,7 @@ export default function BroadcastsPage() {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(apiUrl("/api/broadcasts"));
+      const response = await apiFetch(apiUrl("/api/broadcasts"));
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error);
       setItems(payload.data ?? []);
@@ -184,12 +186,8 @@ export default function BroadcastsPage() {
   }, []);
 
   useEffect(() => {
-    load();
+    void Promise.resolve().then(load);
   }, [load]);
-
-  useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("create") === "true") setOpen(true);
-  }, []);
 
   useEffect(() => {
     if (!toast) return;
@@ -298,7 +296,7 @@ export default function BroadcastsPage() {
                   .map((value) => value.trim())
                   .filter(Boolean),
               };
-      const response = await fetch(apiUrl("/api/broadcasts"), {
+      const response = await apiFetch(apiUrl("/api/broadcasts"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -331,7 +329,7 @@ export default function BroadcastsPage() {
     setTesting(true);
     setModalError("");
     try {
-      const response = await fetch(apiUrl("/api/broadcasts/test"), {
+      const response = await apiFetch(apiUrl("/api/broadcasts/test"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ subject: form.subject, content: form.content }),
@@ -681,5 +679,13 @@ export default function BroadcastsPage() {
       </Modal>
       {toast && <Toast message={toast} />}
     </AppLayout>
+  );
+}
+
+export default function BroadcastsPage() {
+  return (
+    <Suspense fallback={null}>
+      <BroadcastsPageInner />
+    </Suspense>
   );
 }

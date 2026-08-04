@@ -1,7 +1,10 @@
+import { withApiGuard } from "@/lib/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { companies, contacts } from "@/db/schema";
-import { and, eq, ilike } from "drizzle-orm";
+import { companies, contactLifecycleHistory, contacts } from "@/db/schema";
+import { and, eq, ilike, isNull } from "drizzle-orm";
+import { hashIdentity, normalizeIdentity, syncContactIdentity } from "@/lib/identity-resolution";
+import { recordCustomerTimelineEvent } from "@/lib/customer-timeline";
 
 const VALID_STATUSES = ["lead","prospect","customer","vip","churned"];
 
@@ -76,7 +79,7 @@ function parseCSV(text: string): string[][] {
   return rows;
 }
 
-export async function POST(request: NextRequest) {
+async function POSTHandler(request: NextRequest) {
   const orgId = request.headers.get("x-tenant-id");
   if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
@@ -98,6 +101,12 @@ export async function POST(request: NextRequest) {
 
     const toInsert: ContactRow[] = [];
     const skipped: number[] = [];
+    const existingEmailRows = await db.select({ email: contacts.email }).from(contacts).where(and(
+      eq(contacts.organizationId, orgId),
+      isNull(contacts.archivedAt),
+    ));
+    const existingEmails = new Set(existingEmailRows.map((row) => row.email?.trim().toLowerCase()).filter((email): email is string => Boolean(email)));
+    const fileEmails = new Set<string>();
 
     for (let i = 1; i < rows.length; i++) {
       const row = rows[i];
@@ -107,6 +116,14 @@ export async function POST(request: NextRequest) {
         if (field && val) (record as Record<string, string>)[field] = val;
       });
       if (!record.firstName) { skipped.push(i + 1); continue; }
+      if (record.email) {
+        try { record.email = normalizeIdentity("email", record.email); } catch { skipped.push(i + 1); continue; }
+        if (existingEmails.has(record.email) || fileEmails.has(record.email)) { skipped.push(i + 1); continue; }
+        fileEmails.add(record.email);
+      }
+      if (record.phone) {
+        try { record.phone = normalizeIdentity("phone", record.phone); } catch { skipped.push(i + 1); continue; }
+      }
       if (record.status) {
         const normalized = record.status.toLowerCase();
         if (!VALID_STATUSES.includes(normalized)) {
@@ -121,6 +138,9 @@ export async function POST(request: NextRequest) {
     if (toInsert.length === 0) {
       return NextResponse.json({ error: "No valid rows found", skipped }, { status: 400 });
     }
+    const firstIdentity = toInsert.find((row) => row.email || row.phone);
+    if (firstIdentity?.email) hashIdentity("email", firstIdentity.email);
+    else if (firstIdentity?.phone) hashIdentity("phone", firstIdentity.phone);
 
     const companyIds = new Map<string, string>();
     for (const companyName of [...new Set(toInsert.map(row => row.company?.trim()).filter((name): name is string => Boolean(name)))]) {
@@ -138,7 +158,7 @@ export async function POST(request: NextRequest) {
     const chunkSize = 100;
     for (let i = 0; i < toInsert.length; i += chunkSize) {
       const chunk = toInsert.slice(i, i + chunkSize);
-      await db.insert(contacts).values(
+      const created = await db.insert(contacts).values(
         chunk.map(c => ({
           organizationId: orgId,
           firstName: c.firstName,
@@ -152,13 +172,29 @@ export async function POST(request: NextRequest) {
           score: calcScore({ email: c.email, phone: c.phone, jobTitle: c.jobTitle, source: c.source ?? "import", status: c.status ?? "lead" }),
           tags: [],
         }))
-      );
-      inserted += chunk.length;
+      ).returning({ id: contacts.id, email: contacts.email, phone: contacts.phone, status: contacts.status, source: contacts.source, createdAt: contacts.createdAt });
+      for (const contact of created) {
+        await syncContactIdentity({ organizationId: orgId, contactId: contact.id, type: "email", rawValue: contact.email, source: "csv_import" });
+        await syncContactIdentity({ organizationId: orgId, contactId: contact.id, type: "phone", rawValue: contact.phone, source: "csv_import" });
+        await db.insert(contactLifecycleHistory).values({
+          organizationId: orgId, contactId: contact.id, fromStage: null, toStage: contact.status ?? "lead", source: "csv_import",
+          actorUserId: request.headers.get("x-user-id"),
+        });
+        await recordCustomerTimelineEvent({
+          organizationId: orgId, contactId: contact.id, sourceType: "contact", sourceId: contact.id,
+          eventType: "contact.imported", summary: "Contact imported from CSV", actorUserId: request.headers.get("x-user-id"),
+          idempotencyKey: `contact.imported:${contact.id}`, metadata: { source: contact.source }, occurredAt: contact.createdAt,
+        });
+      }
+      inserted += created.length;
     }
 
     return NextResponse.json({ inserted, skipped: skipped.length, total: toInsert.length + skipped.length });
   } catch (err) {
     console.error("[contacts/import]", err);
+    if (err instanceof Error && err.message.includes("IDENTITY_HASHING_SECRET")) return NextResponse.json({ error: "Identity resolution is not configured" }, { status: 503 });
     return NextResponse.json({ error: "Failed to process CSV" }, { status: 500 });
   }
 }
+
+export const POST = withApiGuard(POSTHandler);

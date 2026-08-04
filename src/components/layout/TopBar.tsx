@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { useSession } from "@/hooks/useSession";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import { cn, timeAgo } from "@/lib/utils";
 import {
   Bell,
@@ -21,7 +21,6 @@ import {
   PanelLeftOpen,
   Plus,
   Search,
-  Settings,
   X,
 } from "lucide-react";
 
@@ -93,7 +92,7 @@ export function TopBar({ collapsed, onToggleCollapse }: TopBarProps) {
     let cancelled = false;
     async function loadNotifications() {
       try {
-        const response = await fetch(apiUrl("/api/inbox", { type: "notification" }), { cache: "no-store" });
+        const response = await apiFetch(apiUrl("/api/inbox", { type: "notification" }), { cache: "no-store" });
         if (!response.ok) return;
         const payload = await response.json();
         if (!cancelled) {
@@ -104,7 +103,7 @@ export function TopBar({ collapsed, onToggleCollapse }: TopBarProps) {
         // The header remains usable when notifications are temporarily unavailable.
       }
     }
-    void loadNotifications();
+    void Promise.resolve().then(loadNotifications);
     return () => { cancelled = true; };
   }, []);
 
@@ -119,7 +118,7 @@ export function TopBar({ collapsed, onToggleCollapse }: TopBarProps) {
     if (!notification.read) {
       setNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, read: true } : item));
       setUnreadCount((current) => Math.max(0, current - 1));
-      await fetch(apiUrl("/api/inbox/read"), {
+      await apiFetch(apiUrl("/api/inbox/read"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: "notification", id: notification.id }),

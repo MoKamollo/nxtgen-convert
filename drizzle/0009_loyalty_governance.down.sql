@@ -1,0 +1,10 @@
+DROP TRIGGER IF EXISTS loyalty_point_transactions_immutable ON loyalty_point_transactions;
+DROP FUNCTION IF EXISTS nxtgen_prevent_loyalty_ledger_mutation();
+DROP TABLE IF EXISTS loyalty_fraud_reviews;
+DROP TABLE IF EXISTS customer_referrals;
+DROP TABLE IF EXISTS loyalty_point_transactions;
+DROP TABLE IF EXISTS loyalty_accounts;
+DROP TABLE IF EXISTS loyalty_tiers;
+ALTER TABLE IF EXISTS loyalty_programs DROP CONSTRAINT IF EXISTS loyalty_programs_active_version_fk;
+DROP TABLE IF EXISTS loyalty_program_versions;
+DROP TABLE IF EXISTS loyalty_programs;

@@ -4,15 +4,15 @@ import { Badge, StatusBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Progress } from "@/components/ui/Progress";
 import { formatPercent, cn } from "@/lib/utils";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import {
-  Plus, Search, Zap, Play, Pause, Trash2, BarChart3,
+  Plus, Search, Zap, Play, Pause, BarChart3,
   Users, CheckCircle2, Target, Bot, Sparkles, ChevronRight,
   GitBranch, Loader2, X,
 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { ConfirmAction, Modal, Toast } from "@/components/modules/ModulePrimitives";
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 type Workflow = {
   id: string; name: string; description: string | null;
@@ -22,22 +22,53 @@ type Workflow = {
   conversionRate: string; createdAt: string;
 };
 
+async function fetchWorkflows(): Promise<Workflow[]> {
+  const response = await apiFetch(apiUrl("/api/workflows"));
+  const json = await response.json();
+  if (!response.ok) {
+    throw new Error(json.error ?? "Failed to load workflows");
+  }
+  return Array.isArray(json.data) ? json.data : [];
+}
+
 const TEMPLATES = [
-  { name: "Lead Nurture Sequence", desc: "Automatically nurture new leads with personalized email sequences", steps: 7, category: "Lead Generation", color: "from-brand-500 to-violet-500", icon: Users },
-  { name: "Trial → Paid Conversion", desc: "Convert trial users to paying customers with targeted touchpoints", steps: 12, category: "Revenue", color: "from-emerald-500 to-cyan-500", icon: Target },
-  { name: "Churn Prevention", desc: "Detect at-risk accounts and trigger proactive outreach", steps: 5, category: "Retention", color: "from-amber-500 to-orange-500", icon: Zap },
-  { name: "Onboarding Journey", desc: "Guide new customers through activation milestones", steps: 9, category: "Customer Success", color: "from-violet-500 to-pink-500", icon: CheckCircle2 },
+  {
+    name: "New Contact Follow-up",
+    desc: "Send a consent-gated welcome email, wait one day, then create a follow-up activity.",
+    category: "Lead Follow-up",
+    color: "from-brand-500 to-violet-500",
+    icon: Users,
+    trigger: { event: "contact.created" },
+    steps: [
+      { type: "send_email", config: { subject: "Welcome", body: "Thank you for getting in touch.", purpose: "marketing" } },
+      { type: "wait", config: { amount: 1, unit: "days" } },
+      { type: "create_activity", config: { type: "task", subject: "Follow up with new contact" } },
+    ],
+  },
+  {
+    name: "Qualified Deal Follow-up",
+    desc: "Create a follow-up activity when a deal-stage event is received.",
+    category: "Revenue Operations",
+    color: "from-emerald-500 to-cyan-500",
+    icon: Target,
+    trigger: { event: "deal.stage_changed" },
+    steps: [{ type: "create_activity", config: { type: "task", subject: "Review changed deal stage" } }],
+  },
 ];
 
 const TRIGGER_EVENTS = [
   { value: "contact.created", label: "New contact created" },
   { value: "deal.stage_changed", label: "Deal stage changed" },
-  { value: "form.submitted", label: "Form submitted" },
-  { value: "tag.added", label: "Tag added" },
   { value: "manual", label: "Manual trigger" },
 ];
 
+function workflowCompletionRate(workflow: Workflow): number {
+  const enrolled = workflow.enrolledCount ?? 0;
+  return enrolled > 0 ? (workflow.completedCount ?? 0) / enrolled * 100 : 0;
+}
+
 export default function WorkflowsPage() {
+  const router = useRouter();
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -51,14 +82,37 @@ export default function WorkflowsPage() {
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
 
-  const load = useCallback(() => {
-    fetch(apiUrl("/api/workflows"))
-      .then(r => r.json())
-      .then(j => { setWorkflows(j.data ?? []); setLoading(false); })
-      .catch(() => setLoading(false));
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      setWorkflows(await fetchWorkflows());
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Failed to load workflows");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    let active = true;
+    void fetchWorkflows()
+      .then((loadedWorkflows) => {
+        if (!active) return;
+        setWorkflows(loadedWorkflows);
+        setError("");
+      })
+      .catch((cause: unknown) => {
+        if (!active) return;
+        setError(cause instanceof Error ? cause.message : "Failed to load workflows");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const filtered = workflows.filter(w => {
     const matchSearch = !search || w.name.toLowerCase().includes(search.toLowerCase());
@@ -69,22 +123,36 @@ export default function WorkflowsPage() {
   const totalEnrolled = workflows.reduce((s, w) => s + (w.enrolledCount ?? 0), 0);
   const totalCompleted = workflows.reduce((s, w) => s + (w.completedCount ?? 0), 0);
   const activeCount = workflows.filter(w => w.status === "active").length;
-  const avgConversion = workflows.length > 0
-    ? workflows.reduce((s, w) => s + parseFloat(w.conversionRate ?? "0"), 0) / workflows.length
+  const avgCompletion = workflows.length > 0
+    ? workflows.reduce((sum, workflow) => sum + workflowCompletionRate(workflow), 0) / workflows.length
     : 0;
 
   async function toggleStatus(wf: Workflow) {
-    const newStatus = wf.status === "active" ? "paused" : "active";
-    setWorkflows(prev => prev.map(w => w.id === wf.id ? { ...w, status: newStatus } : w));
-    await fetch(apiUrl(`/api/workflows/${wf.id}`), {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: newStatus }),
-    });
+    setError("");
+    const response = wf.status === "active"
+      ? await apiFetch(apiUrl(`/api/workflows/${wf.id}`), {
+          method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "paused" }),
+        })
+      : await apiFetch(apiUrl(`/api/workflows/${wf.id}/publish`), { method: "POST" });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setError(json.error ?? "Workflow status could not be changed");
+      return;
+    }
+    setToast(wf.status === "active" ? "Workflow paused" : `Workflow version ${json.data?.version ?? "new"} published`);
+    await load();
   }
 
   async function handleDelete(id: string) {
-    setWorkflows(prev => prev.filter(w => w.id !== id));
-    await fetch(apiUrl(`/api/workflows/${id}`), { method: "DELETE" });
+    setError("");
+    const response = await apiFetch(apiUrl(`/api/workflows/${id}`), { method: "DELETE" });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setError(json.error ?? "Workflow could not be archived");
+      return;
+    }
+    setToast("Workflow archived");
+    await load();
   }
 
   async function handleCreate(e: React.FormEvent) {
@@ -92,7 +160,7 @@ export default function WorkflowsPage() {
     if (!form.name.trim()) return;
     setSaving(true);
     try {
-      const res = await fetch(apiUrl("/api/workflows"), {
+      const res = await apiFetch(apiUrl("/api/workflows"), {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: form.name.trim(), description: form.description, trigger: { event: form.triggerEvent } }),
       });
@@ -109,7 +177,18 @@ export default function WorkflowsPage() {
 
   async function generateWithAi() {
     if (!aiDescription.trim()) return; setSaving(true); setError("");
-    try { const response = await fetch(apiUrl("/api/workflows/ai-generate"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ description: aiDescription }) }); const json = await response.json(); if (!response.ok) throw new Error(json.error); setShowAiModal(false); setAiDescription(""); setToast("AI workflow draft created"); load(); } catch (e) { setError(e instanceof Error ? e.message : "AI generation failed"); } finally { setSaving(false); }
+    try { const response = await apiFetch(apiUrl("/api/workflows/ai-generate"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ description: aiDescription }) }); const json = await response.json(); if (!response.ok) throw new Error(json.error); setShowAiModal(false); setAiDescription(""); setToast("AI workflow draft created"); load(); } catch (e) { setError(e instanceof Error ? e.message : "AI generation failed"); } finally { setSaving(false); }
+  }
+
+  async function createFromTemplate(template: (typeof TEMPLATES)[number]) {
+    setSaving(true); setError("");
+    try {
+      const response = await apiFetch(apiUrl("/api/workflows"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: template.name, description: template.desc, trigger: template.trigger, steps: template.steps }) });
+      const json = await response.json();
+      if (!response.ok) throw new Error(json.error ?? "Template could not be created");
+      setToast("Operational workflow draft created"); load();
+    } catch (error) { setError(error instanceof Error ? error.message : "Template could not be created"); }
+    finally { setSaving(false); }
   }
 
   const triggerLabel = (wf: Workflow) => {
@@ -148,7 +227,7 @@ export default function WorkflowsPage() {
             { label: "Active Workflows", value: activeCount, icon: Zap, color: "text-brand-400", bg: "bg-brand-500/10" },
             { label: "Contacts Enrolled", value: totalEnrolled.toLocaleString(), icon: Users, color: "text-emerald-400", bg: "bg-emerald-500/10" },
             { label: "Completions", value: totalCompleted.toLocaleString(), icon: CheckCircle2, color: "text-cyan-400", bg: "bg-cyan-500/10" },
-            { label: "Avg Conversion", value: formatPercent(avgConversion), icon: Target, color: "text-amber-400", bg: "bg-amber-500/10" },
+            { label: "Avg Completion", value: formatPercent(avgCompletion), icon: Target, color: "text-amber-400", bg: "bg-amber-500/10" },
           ].map(stat => {
             const Icon = stat.icon;
             return (
@@ -201,7 +280,7 @@ export default function WorkflowsPage() {
         ) : (
           <div className="space-y-3">
             {filtered.map(wf => (
-              <div key={wf.id} className="rounded-xl border border-surface-800 bg-surface-900/50 hover:border-surface-700 transition-all cursor-pointer group">
+              <div key={wf.id} onClick={() => router.push(`/automation/workflows/${wf.id}`)} className="rounded-xl border border-surface-800 bg-surface-900/50 hover:border-surface-700 transition-all cursor-pointer group">
                 <div className="flex items-center gap-4 p-4">
                   <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", wf.status === "active" ? "bg-emerald-500/15" : "bg-surface-800")}>
                     <Zap size={18} className={wf.status === "active" ? "text-emerald-400" : "text-surface-500"} />
@@ -229,8 +308,8 @@ export default function WorkflowsPage() {
                       <p className="text-[10px] text-surface-600 mt-0.5">Completed</p>
                     </div>
                     <div className="text-center">
-                      <p className="text-sm font-bold text-brand-400">{formatPercent(parseFloat(wf.conversionRate ?? "0"))}</p>
-                      <p className="text-[10px] text-surface-600 mt-0.5">Conversion</p>
+                      <p className="text-sm font-bold text-brand-400">{formatPercent(workflowCompletionRate(wf))}</p>
+                      <p className="text-[10px] text-surface-600 mt-0.5">Completion</p>
                     </div>
                   </div>
                   <div className="hidden xl:block w-32">
@@ -238,7 +317,7 @@ export default function WorkflowsPage() {
                       <span>Active</span>
                       <span>{(wf.enrolledCount ?? 0) - (wf.completedCount ?? 0)}</span>
                     </div>
-                    <Progress value={wf.completedCount ?? 0} max={wf.enrolledCount || 1} color={parseFloat(wf.conversionRate ?? "0") >= 70 ? "green" : parseFloat(wf.conversionRate ?? "0") >= 40 ? "brand" : "amber"} />
+                    <Progress value={wf.completedCount ?? 0} max={wf.enrolledCount || 1} color={workflowCompletionRate(wf) >= 70 ? "green" : workflowCompletionRate(wf) >= 40 ? "brand" : "amber"} />
                   </div>
                   <div className="flex items-center gap-1.5 ml-2">
                     <button onClick={e => { e.stopPropagation(); toggleStatus(wf); }}
@@ -248,7 +327,7 @@ export default function WorkflowsPage() {
                     <button onClick={e => { e.stopPropagation(); setStatsWorkflow(wf); }} className="flex h-7 w-7 items-center justify-center rounded-lg text-surface-500 hover:text-surface-300 hover:bg-surface-800 transition-all">
                       <BarChart3 size={13} />
                     </button>
-                    <span onClick={e => e.stopPropagation()}><ConfirmAction label="Delete" onConfirm={() => handleDelete(wf.id)} /></span>
+                    <span onClick={e => e.stopPropagation()}><ConfirmAction label="Archive" onConfirm={() => handleDelete(wf.id)} /></span>
                     <ChevronRight size={14} className="text-surface-700 group-hover:text-surface-500 transition-colors ml-1" />
                   </div>
                 </div>
@@ -262,7 +341,7 @@ export default function WorkflowsPage() {
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-semibold text-surface-200">Workflow Templates</h2>
-              <Badge variant="purple" size="sm"><Sparkles size={10} className="mr-0.5" />AI-generated</Badge>
+              <Badge variant="purple" size="sm">Operational templates</Badge>
             </div>
             <Button variant="ghost" size="sm" onClick={() => { window.location.href = "/automation/templates"; }}>Browse library →</Button>
           </div>
@@ -277,11 +356,11 @@ export default function WorkflowsPage() {
                   <p className="text-xs font-semibold text-surface-100">{template.name}</p>
                   <p className="text-[11px] text-surface-500 mt-1 leading-relaxed">{template.desc}</p>
                   <div className="flex items-center justify-between mt-3">
-                    <span className="text-[10px] text-surface-600">{template.steps} steps</span>
+                    <span className="text-[10px] text-surface-600">{template.steps.length} steps</span>
                     <span className="text-[10px] bg-surface-800 text-surface-400 rounded px-1.5 py-0.5">{template.category}</span>
                   </div>
                   <button
-                    onClick={() => { setForm(f => ({ ...f, name: template.name })); setShowModal(true); }}
+                    onClick={() => createFromTemplate(template)}
                     className="mt-3 w-full flex items-center justify-center gap-1.5 h-7 rounded-lg border border-dashed border-surface-700 text-xs text-surface-500 hover:border-brand-500/40 hover:text-brand-400 transition-all">
                     <Plus size={12} /> Use template
                   </button>
@@ -331,7 +410,7 @@ export default function WorkflowsPage() {
       )}
 
       <Modal open={showAiModal} onClose={() => setShowAiModal(false)} title="Generate workflow with AI"><div className="space-y-4 p-5"><div><label className="text-xs font-medium text-surface-400">Describe the automation</label><textarea rows={6} value={aiDescription} onChange={e => setAiDescription(e.target.value)} placeholder="When a high-score lead is created, send a welcome email, wait one day, and create a follow-up task." className="mt-1 w-full rounded-lg border border-surface-700 bg-surface-800 px-3 py-2 text-sm text-surface-100 placeholder:text-surface-600 focus:outline-none focus:border-brand-500"/></div><div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setShowAiModal(false)}>Cancel</Button><Button variant="gradient" icon={Sparkles} loading={saving} onClick={generateWithAi}>Generate with AI</Button></div></div></Modal>
-      <Modal open={!!statsWorkflow} onClose={() => setStatsWorkflow(null)} title={`${statsWorkflow?.name ?? "Workflow"} performance`} width="max-w-2xl">{statsWorkflow && <div className="space-y-5 p-5"><div className="grid grid-cols-3 gap-3">{[{label:"Enrolled",value:statsWorkflow.enrolledCount||0},{label:"Completed",value:statsWorkflow.completedCount||0},{label:"Conversion",value:formatPercent(parseFloat(statsWorkflow.conversionRate||"0"))}].map(item => <div key={item.label} className="rounded-xl border border-surface-800 bg-surface-950 p-4"><p className="text-[10px] uppercase text-surface-500">{item.label}</p><p className="mt-1 text-xl font-bold text-surface-100">{item.value}</p></div>)}</div>{statsWorkflow.enrolledCount > 0 ? <div className="h-64 rounded-xl border border-surface-800 bg-surface-950 p-4"><ResponsiveContainer width="100%" height="100%"><BarChart data={[{week:"W1",enrolled:Math.round(statsWorkflow.enrolledCount*.15)},{week:"W2",enrolled:Math.round(statsWorkflow.enrolledCount*.2)},{week:"W3",enrolled:Math.round(statsWorkflow.enrolledCount*.25)},{week:"W4",enrolled:Math.round(statsWorkflow.enrolledCount*.4)}]}><CartesianGrid strokeDasharray="3 3" stroke="#1e293b"/><XAxis dataKey="week" tick={{fill:'#64748b',fontSize:10}}/><YAxis tick={{fill:'#64748b',fontSize:10}}/><Tooltip contentStyle={{background:'#0f172a',border:'1px solid #334155'}}/><Bar dataKey="enrolled" fill="#6366f1"/></BarChart></ResponsiveContainer></div> : <div className="rounded-xl border border-surface-800 bg-surface-950 p-8 text-center text-xs text-surface-500">No execution data yet. Activate this workflow to start tracking.</div>}</div>}</Modal>
+      <Modal open={!!statsWorkflow} onClose={() => setStatsWorkflow(null)} title={`${statsWorkflow?.name ?? "Workflow"} performance`} width="max-w-2xl">{statsWorkflow && <div className="space-y-5 p-5"><div className="grid grid-cols-3 gap-3">{[{label:"Enrolled",value:statsWorkflow.enrolledCount||0},{label:"Completed",value:statsWorkflow.completedCount||0},{label:"Completion",value:formatPercent(workflowCompletionRate(statsWorkflow))}].map(item => <div key={item.label} className="rounded-xl border border-surface-800 bg-surface-950 p-4"><p className="text-[10px] uppercase text-surface-500">{item.label}</p><p className="mt-1 text-xl font-bold text-surface-100">{item.value}</p></div>)}</div><div className="rounded-xl border border-surface-800 bg-surface-950 p-5 text-xs text-surface-400">Completion is calculated from persisted enrollments and completed executions. It is not a customer or revenue conversion metric. No estimated or synthetic weekly series is displayed.</div></div>}</Modal>
       {toast && <Toast message={toast}/>}
     </AppLayout>
   );

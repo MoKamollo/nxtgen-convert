@@ -7,7 +7,7 @@ import {
   StatGrid,
   StatusBadge,
 } from "@/components/modules/ModulePrimitives";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import { BarChart3, Eye, Mail, MousePointerClick, Send } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -33,7 +33,6 @@ type Data = {
       clicked: number;
       bounced: number;
       unsubscribed: number;
-      revenue: number;
     };
   }>;
   totals: {
@@ -43,7 +42,6 @@ type Data = {
     clicked: number;
     bounced: number;
     unsubscribed: number;
-    revenue: number;
   };
   avgOpenRate: number;
   avgClickRate: number;
@@ -56,7 +54,7 @@ export default function CampaignAnalytics() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch(apiUrl("/api/analytics/campaigns"));
+      const r = await apiFetch(apiUrl("/api/analytics/campaigns"));
       const j = await r.json();
       if (!r.ok) throw new Error(j.error);
       setData(j.data);
@@ -67,7 +65,7 @@ export default function CampaignAnalytics() {
     }
   }, []);
   useEffect(() => {
-    load();
+    void Promise.resolve().then(load);
   }, [load]);
   return (
     <AppLayout>

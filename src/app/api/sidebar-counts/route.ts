@@ -1,9 +1,10 @@
+import { withApiGuard } from "@/lib/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { contacts, tickets, workflows, deals } from "@/db/schema";
 import { eq, and, gte, notInArray } from "drizzle-orm";
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   const orgId = request.headers.get("x-tenant-id");
   if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
@@ -38,3 +39,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({});
   }
 }
+
+export const GET = withApiGuard(GETHandler);

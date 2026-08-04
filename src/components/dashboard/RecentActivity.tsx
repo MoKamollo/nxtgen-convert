@@ -1,13 +1,31 @@
 "use client";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
-import { Avatar } from "@/components/ui/Avatar";
 import { StatusBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { timeAgo, formatCurrency } from "@/lib/utils";
 import { Mail, Phone, Calendar, FileText, MessageSquare, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEffect, useState } from "react";
-import { apiUrl } from "@/lib/org";
+import { useRouter } from "next/navigation";
+import { apiFetch, apiUrl } from "@/lib/org";
+
+type ActivityItem = {
+  id: string;
+  type: string;
+  subject: string;
+  outcome?: string | null;
+  scheduledAt?: string | null;
+  completedAt?: string | null;
+};
+
+type DealItem = {
+  id: string;
+  name: string;
+  stage: string;
+  contact?: string | null;
+  probability: number;
+  value: number;
+};
 
 const activityIcons = {
   email: { icon: Mail, color: "text-blue-400", bg: "bg-blue-500/10" },
@@ -18,10 +36,11 @@ const activityIcons = {
 };
 
 export function RecentActivityFeed() {
-  const [activities, setActivities] = useState<any[]>([]);
+  const router = useRouter();
+  const [activities, setActivities] = useState<ActivityItem[]>([]);
 
   useEffect(() => {
-    fetch(apiUrl("/api/activities"))
+    apiFetch(apiUrl("/api/activities"))
       .then((r) => r.json())
       .then((j) => setActivities(j.data?.slice(0, 5) ?? []));
   }, []);
@@ -30,7 +49,7 @@ export function RecentActivityFeed() {
     <Card>
       <CardHeader>
         <CardTitle>Recent Activity</CardTitle>
-        <Button variant="ghost" size="sm">View all</Button>
+        <Button variant="ghost" size="sm" onClick={() => router.push("/crm/activities")}>View all</Button>
       </CardHeader>
       <div className="space-y-3">
         {activities.map((activity) => {
@@ -69,19 +88,20 @@ export function RecentActivityFeed() {
 }
 
 export function TopDeals() {
-  const [deals, setDeals] = useState<any[]>([]);
+  const router = useRouter();
+  const [deals, setDeals] = useState<DealItem[]>([]);
 
   useEffect(() => {
-    fetch(apiUrl("/api/deals"))
+    apiFetch(apiUrl("/api/deals"))
       .then((r) => r.json())
-      .then((j) => setDeals((j.data ?? []).filter((d: any) => !["closed_won", "closed_lost"].includes(d.stage)).slice(0, 4)));
+      .then((j) => setDeals((j.data ?? []).filter((deal: DealItem) => !["closed_won", "closed_lost"].includes(deal.stage)).slice(0, 4)));
   }, []);
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Active Deals</CardTitle>
-        <Button variant="ghost" size="sm">View pipeline</Button>
+        <Button variant="ghost" size="sm" onClick={() => router.push("/crm/deals")}>View pipeline</Button>
       </CardHeader>
       <div className="space-y-3">
         {deals.map((deal) => (

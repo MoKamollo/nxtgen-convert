@@ -1,6 +1,6 @@
 "use client";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import { cn } from "@/lib/utils";
 import { Bot, Send, User, Sparkles, Loader2, RotateCcw, Zap } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
@@ -74,7 +74,7 @@ export default function AIAssistantPage() {
     setLoading(true);
 
     try {
-      const res = await fetch(apiUrl("/api/ai-chat"), {
+      const res = await apiFetch(apiUrl("/api/ai-chat"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

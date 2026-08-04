@@ -1,9 +1,10 @@
+import { withApiGuard } from "@/lib/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { contacts, deals, tasks } from "@/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   const orgId = request.headers.get("x-tenant-id");
   if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
@@ -28,10 +29,10 @@ export async function GET(request: NextRequest) {
 
     const insights: {
       id: string; type: string; title: string; body: string;
-      priority: string; contact?: string; impact?: string; action: string;
+      priority: string; contact?: string; impact?: string; action: string; contactIds?: string[];
     }[] = [];
 
-    // Churn risk: contacts with status=churned in the last 30 days
+    // Recent churn: contacts explicitly marked churned in the last 30 days
     const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const recentChurns = contactRows.filter(c =>
       c.status === "churned" && c.updatedAt && new Date(c.updatedAt) > cutoff
@@ -41,11 +42,12 @@ export async function GET(request: NextRequest) {
       insights.push({
         id: "churn-recent",
         type: "churn",
-        title: `${recentChurns.length} customer${recentChurns.length > 1 ? "s" : ""} churned this month`,
-        body: `${first.firstName} ${first.lastName ?? ""}${recentChurns.length > 1 ? ` and ${recentChurns.length - 1} others` : ""} recently churned. Consider a win-back campaign.`,
+        title: `${recentChurns.length} churned contact record${recentChurns.length > 1 ? "s" : ""} updated in the last 30 days`,
+        body: `${first.firstName} ${first.lastName ?? ""}${recentChurns.length > 1 ? ` and ${recentChurns.length - 1} others` : ""} have a churned status and were updated recently. Review whether a win-back action is appropriate.`,
         priority: recentChurns.length >= 3 ? "high" : "medium",
         contact: `${first.firstName} ${first.lastName ?? ""}`.trim(),
         action: "Review churned contacts",
+        contactIds: recentChurns.map((contact) => contact.id),
       });
     }
 
@@ -57,11 +59,12 @@ export async function GET(request: NextRequest) {
       insights.push({
         id: "hot-leads",
         type: "opportunity",
-        title: `${hotLeads.length} hot lead${hotLeads.length > 1 ? "s" : ""} awaiting first contact`,
+        title: `${hotLeads.length} high-score lead${hotLeads.length > 1 ? "s" : ""} awaiting first contact`,
         body: `${hotLeads.map(l => `${l.firstName} ${l.lastName ?? ""}`.trim()).slice(0, 3).join(", ")}${hotLeads.length > 3 ? ` and ${hotLeads.length - 3} more` : ""} have high scores but haven't been contacted yet.`,
         priority: "high",
-        impact: `Potential: ${hotLeads.length} new opportunities`,
-        action: "Reach out now",
+        impact: `${hotLeads.length} high-score leads matched`,
+        action: "Review lead follow-up",
+        contactIds: hotLeads.map((contact) => contact.id),
       });
     }
 
@@ -76,10 +79,11 @@ export async function GET(request: NextRequest) {
         id: "vip-expansion",
         type: "expansion",
         title: `${vipWithoutDeals.length} VIP contact${vipWithoutDeals.length > 1 ? "s" : ""} with no active deal`,
-        body: `${vipWithoutDeals.slice(0, 2).map(c => `${c.firstName} ${c.lastName ?? ""}`.trim()).join(", ")} are VIP contacts without an open deal. Upsell opportunity.`,
+        body: `${vipWithoutDeals.slice(0, 2).map(c => `${c.firstName} ${c.lastName ?? ""}`.trim()).join(", ")} are VIP contacts without an open deal. Review for a possible upsell or cross-sell.`,
         priority: "medium",
-        impact: "Upsell or cross-sell opportunity",
-        action: "Create expansion deal",
+        impact: "Rule match: VIP status and no open deal",
+        action: "Review expansion candidates",
+        contactIds: vipWithoutDeals.map((contact) => contact.id),
       });
     }
 
@@ -108,15 +112,24 @@ export async function GET(request: NextRequest) {
         id: "overdue-tasks",
         type: "campaign",
         title: `${overdueTasks.length} overdue task${overdueTasks.length > 1 ? "s" : ""}`,
-        body: `You have ${overdueTasks.length} past-due task${overdueTasks.length > 1 ? "s" : ""}: "${overdueTasks[0].title}"${overdueTasks.length > 1 ? ` and ${overdueTasks.length - 1} more` : ""}. These may be blocking deals.`,
+        body: `You have ${overdueTasks.length} past-due task${overdueTasks.length > 1 ? "s" : ""}: "${overdueTasks[0].title}"${overdueTasks.length > 1 ? ` and ${overdueTasks.length - 1} more` : ""}. Review whether these tasks are blocking follow-up or deal progress.`,
         priority: overdueTasks.length >= 3 ? "high" : "medium",
         action: "Review overdue tasks",
       });
     }
 
-    return NextResponse.json({ data: insights });
+    return NextResponse.json({
+      data: insights,
+      methodology: {
+        kind: "deterministic_rules",
+        ruleVersion: "operational-signals-v1",
+        disclaimer: "Signals are explainable rule matches from current records. They are not predictions or machine-learning outputs.",
+      },
+    });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Failed to generate insights" }, { status: 500 });
   }
 }
+
+export const GET = withApiGuard(GETHandler);

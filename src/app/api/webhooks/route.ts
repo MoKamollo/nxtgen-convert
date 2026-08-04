@@ -1,46 +1,85 @@
-import { randomUUID } from "crypto";
+import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { organizations } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { integrationSecrets, webhookEndpoints } from "@/db/schema";
+import { withApiGuard } from "@/lib/api-guard";
+import { generateWebhookSigningSecret, validateWebhookUrl } from "@/lib/webhooks";
+import { normalizeWebhookEvents } from "@/lib/webhook-security";
 
-type Webhook = { id: string; url: string; events: string[]; active: boolean; createdAt: string };
-type Settings = Record<string, unknown> & { webhooks?: Webhook[] };
-
-async function settingsFor(orgId: string) {
-  const [org] = await db.select({ settings: organizations.settings }).from(organizations).where(eq(organizations.id, orgId)).limit(1);
-  return org ? ((org.settings ?? {}) as Settings) : null;
+async function GETHandler(request: NextRequest) {
+  const organizationId = request.headers.get("x-tenant-id")!;
+  const data = await db.select({
+    id: webhookEndpoints.id,
+    url: webhookEndpoints.url,
+    events: webhookEndpoints.events,
+    active: webhookEndpoints.active,
+    healthStatus: webhookEndpoints.healthStatus,
+    consecutiveFailures: webhookEndpoints.consecutiveFailures,
+    lastDeliveryAt: webhookEndpoints.lastDeliveryAt,
+    lastSuccessAt: webhookEndpoints.lastSuccessAt,
+    lastFailureAt: webhookEndpoints.lastFailureAt,
+    createdAt: webhookEndpoints.createdAt,
+  }).from(webhookEndpoints).where(eq(webhookEndpoints.organizationId, organizationId));
+  return NextResponse.json({ data });
 }
 
-export async function GET(request: NextRequest) {
-  const orgId = request.headers.get("x-tenant-id");
-  if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+async function POSTHandler(request: NextRequest) {
+  const organizationId = request.headers.get("x-tenant-id")!;
+  const body = await request.json() as Record<string, unknown>;
+  const url = String(body.url ?? "").trim();
   try {
-    const settings = await settingsFor(orgId);
-    if (!settings) return NextResponse.json({ error: "Organization not found" }, { status: 404 });
-    return NextResponse.json({ data: settings.webhooks ?? [] });
-  } catch {
-    return NextResponse.json({ error: "Failed to fetch webhooks" }, { status: 500 });
+    await validateWebhookUrl(url);
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid webhook URL" }, { status: 400 });
+  }
+
+  const events = normalizeWebhookEvents(body.events);
+  if (events.length === 0) return NextResponse.json({ error: "Select at least one event" }, { status: 400 });
+
+  try {
+    const material = generateWebhookSigningSecret();
+    const endpoint = await db.transaction(async (transaction) => {
+      const [secretRecord] = await transaction.insert(integrationSecrets).values({
+        organizationId,
+        provider: "webhook-signing",
+        ciphertext: material.ciphertext,
+        iv: material.iv,
+        authTag: material.authTag,
+        keyVersion: material.keyVersion,
+      }).returning({ id: integrationSecrets.id });
+      if (!secretRecord) throw new Error("Webhook signing secret could not be stored");
+
+      const [createdEndpoint] = await transaction.insert(webhookEndpoints).values({
+        organizationId,
+        url,
+        events,
+        secretId: secretRecord.id,
+      }).returning({
+        id: webhookEndpoints.id,
+        url: webhookEndpoints.url,
+        events: webhookEndpoints.events,
+        active: webhookEndpoints.active,
+        healthStatus: webhookEndpoints.healthStatus,
+        createdAt: webhookEndpoints.createdAt,
+      });
+      if (!createdEndpoint) throw new Error("Webhook endpoint could not be created");
+      return createdEndpoint;
+    });
+
+    return NextResponse.json({
+      data: {
+        ...endpoint,
+        signingSecret: material.secret,
+        warning: "Copy the signing secret now. It cannot be displayed again.",
+      },
+    }, { status: 201 });
+  } catch (error) {
+    return NextResponse.json({
+      error: "Webhook secret storage is not configured",
+      detail: error instanceof Error ? error.message : undefined,
+    }, { status: 503 });
   }
 }
 
-export async function POST(request: NextRequest) {
-  const orgId = request.headers.get("x-tenant-id");
-  if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  try {
-    const body = await request.json();
-    const url = String(body.url ?? "").trim();
-    let parsed: URL;
-    try { parsed = new URL(url); } catch { return NextResponse.json({ error: "Enter a valid HTTPS URL" }, { status: 400 }); }
-    if (parsed.protocol !== "https:") return NextResponse.json({ error: "Webhook URLs must use HTTPS" }, { status: 400 });
-    const events = Array.isArray(body.events) ? body.events.map(String).filter(Boolean) : [];
-    if (events.length === 0) return NextResponse.json({ error: "Select at least one event" }, { status: 400 });
-    const settings = await settingsFor(orgId);
-    if (!settings) return NextResponse.json({ error: "Organization not found" }, { status: 404 });
-    const webhook: Webhook = { id: randomUUID(), url, events, active: true, createdAt: new Date().toISOString() };
-    await db.update(organizations).set({ settings: { ...settings, webhooks: [...(settings.webhooks ?? []), webhook] }, updatedAt: new Date() }).where(eq(organizations.id, orgId));
-    return NextResponse.json({ data: webhook }, { status: 201 });
-  } catch {
-    return NextResponse.json({ error: "Failed to save webhook" }, { status: 500 });
-  }
-}
+export const GET = withApiGuard(GETHandler);
+export const POST = withApiGuard(POSTHandler);

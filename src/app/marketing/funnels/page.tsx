@@ -12,7 +12,7 @@ import {
   StatGrid,
   Toast,
 } from "@/components/modules/ModulePrimitives";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import { ArrowDown, BarChart3, Plus, Target, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 type Stage = {
@@ -37,7 +37,7 @@ export default function Funnels() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch(apiUrl("/api/marketing/funnels", { period }));
+      const r = await apiFetch(apiUrl("/api/marketing/funnels", { period }));
       const j = await r.json();
       if (!r.ok) throw new Error(j.error);
       setData(j.data);
@@ -48,12 +48,12 @@ export default function Funnels() {
     }
   }, [period]);
   useEffect(() => {
-    load();
+    void Promise.resolve().then(load);
   }, [load]);
   const save = async () => {
     setSaving(true);
     try {
-      const r = await fetch(apiUrl("/api/marketing/funnels"), {
+      const r = await apiFetch(apiUrl("/api/marketing/funnels"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),

@@ -4,13 +4,12 @@ import { ConfirmAction } from "@/components/modules/ModulePrimitives";
 import { Card } from "@/components/ui/Card";
 import { Badge, StatusBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Avatar } from "@/components/ui/Avatar";
 import { timeAgo, cn } from "@/lib/utils";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import {
-  Plus, Search, Filter, HeadphonesIcon, Trash2, Clock,
-  AlertTriangle, CheckCircle, MessageSquare, ChevronRight,
-  Star, Zap, Loader2, X,
+  Plus, Search, HeadphonesIcon, Clock,
+  AlertTriangle, CheckCircle, MessageSquare,
+  Star, Loader2, X,
 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 
@@ -40,13 +39,13 @@ export default function TicketsPage() {
   const [form, setForm] = useState({ subject: "", description: "", priority: "medium" });
 
   const load = useCallback(() => {
-    fetch(apiUrl("/api/tickets"))
+    apiFetch(apiUrl("/api/tickets"))
       .then(r => r.json())
       .then(j => { setTickets(j.data ?? []); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { void Promise.resolve().then(load); }, [load]);
 
   const stats = {
     open:       tickets.filter(t => t.status === "open").length,
@@ -85,7 +84,7 @@ export default function TicketsPage() {
   async function cycleStatus(ticket: Ticket) {
     const nextStatus = STATUS_CYCLE[ticket.status] ?? "open";
     setTickets(prev => prev.map(t => t.id === ticket.id ? { ...t, status: nextStatus as Ticket["status"] } : t));
-    await fetch(apiUrl(`/api/tickets/${ticket.id}`), {
+    await apiFetch(apiUrl(`/api/tickets/${ticket.id}`), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: nextStatus }),
@@ -94,14 +93,14 @@ export default function TicketsPage() {
 
   async function handleDelete(id: string) {
     setTickets(prev => prev.filter(t => t.id !== id));
-    await fetch(apiUrl(`/api/tickets/${id}`), { method: "DELETE" });
+    await apiFetch(apiUrl(`/api/tickets/${id}`), { method: "DELETE" });
   }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!form.subject.trim()) return;
     setSaving(true);
-    const res = await fetch(apiUrl("/api/tickets"), {
+    const res = await apiFetch(apiUrl("/api/tickets"), {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ subject: form.subject.trim(), description: form.description, priority: form.priority }),
     });
@@ -125,10 +124,7 @@ export default function TicketsPage() {
               {stats.open + stats.inProgress} open ticket{stats.open + stats.inProgress !== 1 ? "s" : ""}
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" icon={Zap}>AI Suggestions</Button>
-            <Button variant="gradient" size="sm" icon={Plus} onClick={() => setShowModal(true)}>New Ticket</Button>
-          </div>
+          <Button variant="gradient" size="sm" icon={Plus} onClick={() => setShowModal(true)}>New Ticket</Button>
         </div>
 
         {/* Summary Cards */}
@@ -167,9 +163,6 @@ export default function TicketsPage() {
               </button>
             ))}
           </div>
-          <button className="flex items-center gap-1.5 h-8 rounded-lg border border-surface-700 bg-surface-900 px-3 text-xs text-surface-400 hover:text-surface-200 hover:border-surface-600 transition-all">
-            <Filter size={13} /> Filter
-          </button>
         </div>
 
         {/* Ticket List */}

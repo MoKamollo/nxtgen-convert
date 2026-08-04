@@ -2,7 +2,7 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import { Plus, ChevronLeft, ChevronRight, Calendar, Video, Phone, Mail, MessageSquare, Loader2, CheckSquare, X } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -33,7 +33,7 @@ const todayStr = today.toISOString().split("T")[0];
 const nowTime  = today.toTimeString().slice(0,5);
 
 export default function CalendarPage() {
-  const [currentDate,   setCurrentDate]   = useState(new Date());
+  const [currentDate,   setCurrentDate]   = useState(today);
   const [viewMode,      setViewMode]      = useState<"month" | "week">("month");
   const [events,        setEvents]        = useState<CalEvent[]>([]);
   const [loading,       setLoading]       = useState(true);
@@ -49,9 +49,9 @@ export default function CalendarPage() {
 
   useEffect(() => {
     Promise.all([
-      fetch(apiUrl("/api/activities")).then(r => r.json()),
-      fetch(apiUrl("/api/tasks")).then(r => r.json()),
-      fetch(apiUrl("/api/contacts")).then(r => r.json()),
+      apiFetch(apiUrl("/api/activities")).then(r => r.json()),
+      apiFetch(apiUrl("/api/tasks")).then(r => r.json()),
+      apiFetch(apiUrl("/api/contacts")).then(r => r.json()),
     ]).then(([actsRes, tasksRes, contsRes]) => {
       const acts: CalEvent[] = (actsRes.data ?? [])
         .filter((a: { scheduledAt?: string | null }) => a.scheduledAt)
@@ -96,7 +96,7 @@ export default function CalendarPage() {
     setSaving(true);
 
     const scheduledAt = `${eventForm.date}T${eventForm.time}:00`;
-    const res = await fetch(apiUrl("/api/activities"), {
+    const res = await apiFetch(apiUrl("/api/activities"), {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         type: eventForm.type,

@@ -1,4 +1,7 @@
 "use client";
+import Image from "next/image";
+import Link from "next/link";
+import { apiFetch } from "@/lib/org";
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle, CheckCircle } from "lucide-react";
@@ -30,7 +33,7 @@ function LoginForm() {
     setLoading(true);
     try {
       const next = params.get("next") ?? "/dashboard";
-      const res  = await fetch(`/api/auth/login?next=${encodeURIComponent(next)}`, {
+      const res  = await apiFetch(`/api/auth/login?next=${encodeURIComponent(next)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
@@ -50,7 +53,7 @@ function LoginForm() {
       <h1 className="text-xl font-bold text-white mb-1">Welcome back</h1>
       <p className="text-sm text-[#64748b] mb-6">
         No account?{" "}
-        <a href="/sign-up" className="text-[#7B6EF6] hover:underline font-medium">Create one</a>
+        <Link href="/sign-up" className="text-[#7B6EF6] hover:underline font-medium">Create one</Link>
       </p>
 
       {verified && (
@@ -116,7 +119,7 @@ function LoginForm() {
           </div>
         </div>
 
-        <div className="flex justify-end -mt-1"><a href="/forgot-password" className="text-xs text-[#7B6EF6] hover:underline">Forgot password?</a></div>
+        <div className="flex justify-end -mt-1"><Link href="/forgot-password" className="text-xs text-[#7B6EF6] hover:underline">Forgot password?</Link></div>
 
         <button type="submit" disabled={loading}
           className="w-full h-10 rounded-lg bg-gradient-to-r from-[#7B6EF6] to-[#3B9EFF] text-sm font-semibold text-white flex items-center justify-center gap-2 hover:opacity-90 transition-opacity disabled:opacity-50 mt-2">
@@ -133,9 +136,9 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center gap-2 mb-8">
           <a href="https://nxtgen-stack.com/convert/" style={{ width: 158, height: 32, overflow: "hidden", display: "block" }}>
-            <img src="/nxg-logo-dark.svg" alt="NxtGen" style={{ height: 32, width: "auto" }} />
+            <Image src="/nxg-logo-dark.svg" alt="NxtGen" width={160} height={32} className="h-8 w-auto" priority />
           </a>
-          <span className="text-sm font-semibold tracking-widest text-violet-400 uppercase">Convergence</span>
+          <span className="text-sm font-semibold tracking-widest text-violet-400 uppercase">Convert</span>
         </div>
         <Suspense>
           <LoginForm />

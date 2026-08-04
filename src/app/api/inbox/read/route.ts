@@ -1,3 +1,4 @@
+import { withApiGuard } from "@/lib/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { activities, notifications } from "@/db/schema";
@@ -7,7 +8,7 @@ function metadataRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
-export async function POST(request: NextRequest) {
+async function POSTHandler(request: NextRequest) {
   const orgId = request.headers.get("x-tenant-id");
   const userId = request.headers.get("x-user-id");
   if (!orgId || !userId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
@@ -51,3 +52,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Failed to update inbox" }, { status: 500 });
   }
 }
+
+export const POST = withApiGuard(POSTHandler);

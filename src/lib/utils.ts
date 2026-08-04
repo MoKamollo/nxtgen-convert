@@ -24,7 +24,7 @@ export function formatPercent(value: number, decimals = 1): string {
   return `${value.toFixed(decimals)}%`;
 }
 
-export function formatDate(date: Date | string, format = "MMM d, yyyy"): string {
+export function formatDate(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : date;
   return d.toLocaleDateString("en-US", {
     year: "numeric",
@@ -49,7 +49,7 @@ export function timeAgo(date: Date | string): string {
 }
 
 export function generateId(): string {
-  return Math.random().toString(36).substr(2, 9);
+  return crypto.randomUUID().replace(/-/g, "").slice(0, 16);
 }
 
 export function slugify(text: string): string {

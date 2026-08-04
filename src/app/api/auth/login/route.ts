@@ -1,83 +1,62 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/db";
-import { organizations, users } from "@/db/schema";
-import { eq } from "drizzle-orm";
-import { signSession, cookieHeader } from "@/lib/session";
+import { provisionAuthenticatedSession } from "@/lib/auth-provisioning";
+import { recordAudit } from "@/lib/audit";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { clientIp, hashSensitive, requestId, isSameOriginMutation, isValidCsrfToken } from "@/lib/request-security";
+import { cookieHeader, signSession } from "@/lib/session";
 
-const SPACE_LOGIN_URL = "https://space.nxtgen-stack.com/api/auth/login.php";
+const SPACE_LOGIN_URL = process.env.SPACE_LOGIN_URL ?? "https://space.nxtgen-stack.com/api/auth/login.php";
+
+function safeInternalRedirect(value: string | null): string {
+  return value && value.startsWith("/") && !value.startsWith("//") ? value : "/dashboard";
+}
 
 export async function POST(request: NextRequest) {
-  try {
-    const { email, password } = await request.json();
+  if (!isSameOriginMutation(request) || !isValidCsrfToken(request)) {
+    return NextResponse.json({ error: "Request verification failed" }, { status: 403 });
+  }
+  const id = requestId(request);
+  const ip = clientIp(request);
+  const userAgent = request.headers.get("user-agent") ?? "unknown";
+  const rate = await checkRateLimit(ip, "auth.login", 10, 15 * 60);
+  if (!rate.allowed) return NextResponse.json({ error: "Too many login attempts. Try again later.", requestId: id }, { status: 429 });
 
-    if (!email || !password) {
-      return NextResponse.json({ error: "Email and password required" }, { status: 400 });
+  try {
+    const body = await request.json();
+    const email = String(body.email ?? "").trim().toLowerCase();
+    const password = String(body.password ?? "");
+    if (!email || !password || password.length > 256) {
+      return NextResponse.json({ error: "Email and password required", requestId: id }, { status: 400 });
     }
 
-    // Proxy login to Space
     const spaceRes = await fetch(SPACE_LOGIN_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Request-ID": id },
       body: JSON.stringify({ email, password }),
+      signal: AbortSignal.timeout(15_000),
     });
-
-    const spaceData = await spaceRes.json();
-
+    const spaceData = await spaceRes.json().catch(() => ({}));
     if (!spaceRes.ok || !spaceData.user) {
-      return NextResponse.json(
-        { error: spaceData.error ?? "Invalid credentials" },
-        { status: 401 }
-      );
+      await recordAudit({ action: "auth.login", result: "denied", requestId: id, ipHash: hashSensitive(ip), userAgentHash: hashSensitive(userAgent), metadata: { emailHash: hashSensitive(email), upstreamStatus: spaceRes.status } });
+      return NextResponse.json({ error: "Invalid credentials", requestId: id }, { status: 401 });
     }
 
-    const { id: userId, tenant_id: rawTenantId, name, role, plan } = spaceData.user;
+    const payload = await provisionAuthenticatedSession({
+      externalUserId: String(spaceData.user.id ?? ""),
+      externalTenantId: String(spaceData.user.tenant_id ?? ""),
+      email: String(spaceData.user.email ?? email),
+      name: String(spaceData.user.name ?? email),
+      role: spaceData.user.role,
+      plan: spaceData.user.plan,
+    }, { ip, userAgent });
 
-    // Convert Space IDs (various formats) to UUID for Postgres
-    const spaceIdToUUID = (id: string) => {
-      const hex = id.replace(/^[a-z]+_/i, "").replace(/[^a-f0-9]/gi, "").padEnd(32, "0").slice(0, 32);
-      return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20,32)}`;
-    };
-    const tenantId = rawTenantId.includes("-") ? rawTenantId : spaceIdToUUID(rawTenantId);
-
-    // Auto-create org in Convert DB if first login for this tenant.
-    // If tenantId not found, check whether this user already has an org (by email in users table)
-    // to avoid creating duplicate orgs when Space returns a different tenant_id format.
-    let resolvedTenantId = tenantId;
-    const existing = await db
-      .select({ id: organizations.id })
-      .from(organizations)
-      .where(eq(organizations.id, tenantId))
-      .limit(1);
-
-    if (existing.length === 0) {
-      // Look for an existing org via the user record (email match)
-      const existingUser = await db
-        .select({ organizationId: users.organizationId })
-        .from(users)
-        .where(eq(users.email, email.toLowerCase()))
-        .limit(1);
-
-      if (existingUser.length > 0 && existingUser[0].organizationId) {
-        // Reuse the existing org rather than creating a duplicate
-        resolvedTenantId = existingUser[0].organizationId;
-      } else {
-        await db.insert(organizations).values({
-          id: tenantId,
-          name: name + "'s Workspace",
-          slug: rawTenantId,
-          plan: "starter",
-        });
-      }
-    }
-
-    const token = await signSession({ userId, tenantId: resolvedTenantId, email, name, role, plan });
-
-    const next = request.nextUrl.searchParams.get("next") ?? "/dashboard";
-    const response = NextResponse.json({ ok: true, redirect: next });
+    const token = await signSession(payload);
+    const response = NextResponse.json({ ok: true, redirect: safeInternalRedirect(request.nextUrl.searchParams.get("next")) });
     response.headers.set("Set-Cookie", cookieHeader(token));
+    await recordAudit({ organizationId: payload.tenantId, actorUserId: payload.userId, action: "auth.login", result: "success", requestId: id, ipHash: hashSensitive(ip), userAgentHash: hashSensitive(userAgent), metadata: { sessionId: payload.sessionId } });
     return response;
-  } catch (err) {
-    console.error(err);
-    return NextResponse.json({ error: "Server error" }, { status: 500 });
+  } catch (error) {
+    console.error("[auth.login]", error);
+    return NextResponse.json({ error: "Authentication service unavailable", requestId: id }, { status: 503 });
   }
 }

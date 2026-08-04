@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
 import { cn } from "@/lib/utils";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import {
   User, Building2, Shield, Bell, Key, Plug, CreditCard,
   Palette, Code, Users, Check, Zap, Mail, MessageSquare,
@@ -35,8 +35,9 @@ type UserData = {
 
 type NotificationPreferences = { email: Record<string, boolean>; inApp: Record<string, boolean> };
 type AppearancePreferences = { density: "comfortable" | "compact"; reduceMotion: boolean };
-type ApiKeyItem = { id: string; name: string; maskedKey: string; createdAt: string; lastUsed: string | null };
-type WebhookItem = { id: string; url: string; events: string[]; active: boolean; createdAt: string };
+type ApiKeyItem = { id: string; name: string; maskedKey: string; scopes?: string[]; createdAt: string; lastUsedAt?: string | null };
+type WebhookItem = { id: string; url: string; events: string[]; active: boolean; healthStatus: string; consecutiveFailures: number; createdAt: string };
+type IntegrationStatus = { status: string; healthStatus: string; displayName?: string | null; lastVerifiedAt?: string | null; lastSyncAt?: string | null; lastError?: string | null; requirements?: string[] };
 const NOTIFICATION_EVENTS = [
   ["contactCreated", "New contact created"], ["dealStageChanged", "Deal stage changed"], ["dealWon", "Deal won"],
   ["taskDue", "Task due in 24h"], ["campaignSent", "Campaign sent"], ["ticketResolved", "Ticket resolved"], ["weeklySummary", "Weekly summary"],
@@ -70,6 +71,8 @@ const INTEGRATIONS = [
   { name: "Webhooks",         icon: Webhook,      connected: false, category: "Developer" },
 ];
 
+const CURRENT_MONTH = new Date().toISOString().slice(0, 7);
+
 const PLAN_LABELS: Record<string, { name: string; color: string }> = {
   starter:      { name: "Starter",      color: "text-surface-300" },
   professional: { name: "Professional", color: "text-brand-400" },
@@ -98,7 +101,7 @@ export default function SettingsPage() {
 
   type SpendRow = { id: string; month: string; channel: string; amount: string; notes: string | null };
   const [spendRows, setSpendRows] = useState<SpendRow[]>([]);
-  const [spendForm, setSpendForm] = useState({ month: new Date().toISOString().slice(0, 7), channel: "other", amount: "", notes: "" });
+  const [spendForm, setSpendForm] = useState({ month: CURRENT_MONTH, channel: "other", amount: "", notes: "" });
   const [addingSpend, setAddingSpend] = useState(false);
   const [contactCount, setContactCount] = useState<number | null>(null);
   const [emailsSentMonth, setEmailsSentMonth] = useState<number | null>(null);
@@ -108,10 +111,12 @@ export default function SettingsPage() {
   const [showKeyModal, setShowKeyModal] = useState(false);
   const [keyName, setKeyName] = useState("Default");
   const [newKey, setNewKey] = useState("");
+  const [newWebhookSecret, setNewWebhookSecret] = useState("");
   const [webhookForm, setWebhookForm] = useState({ url: "", events: ["contact.created", "deal.won"] });
   const [passwordForm, setPasswordForm] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
   const [integrationModal, setIntegrationModal] = useState<string | null>(null);
-  const [stripeForm, setStripeForm] = useState({ stripePublishableKey: "", stripeWebhookSecret: "" });
+  const [stripeForm, setStripeForm] = useState({ secretKey: "", publishableKey: "", webhookSecret: "" });
+  const [integrationStatuses, setIntegrationStatuses] = useState<Record<string, IntegrationStatus>>({});
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [notifications, setNotifications] = useState<NotificationPreferences>(defaultNotifications);
   const [appearance, setAppearance] = useState<AppearancePreferences>({ density: "comfortable", reduceMotion: false });
@@ -119,7 +124,7 @@ export default function SettingsPage() {
   const [toast, setToast] = useState("");
 
   useEffect(() => {
-    fetch(apiUrl("/api/users/me"))
+    apiFetch(apiUrl("/api/users/me"))
       .then(r => r.json())
       .then(data => {
         setUserData(data);
@@ -141,18 +146,18 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (activeSection === "growth") {
-      fetch(apiUrl("/api/marketing-spend"))
+      apiFetch(apiUrl("/api/marketing-spend"))
         .then(r => r.json())
         .then(j => setSpendRows(j.data ?? []));
     }
     if (activeSection === "billing" && contactCount === null) {
       // Fetch live contact count and monthly email usage
-      fetch(apiUrl("/api/contacts"))
+      apiFetch(apiUrl("/api/contacts"))
         .then(r => r.json())
         .then(j => setContactCount((j.data ?? []).length))
         .catch(() => {});
       const currentMonth = new Date().toISOString().slice(0, 7);
-      fetch(apiUrl("/api/campaigns"))
+      apiFetch(apiUrl("/api/campaigns"))
         .then(r => r.json())
         .then(j => {
           const sent = (j.data ?? [])
@@ -167,28 +172,34 @@ export default function SettingsPage() {
   }, [activeSection, contactCount]);
 
   useEffect(() => {
-    if (["organization", "team", "billing", "integrations"].includes(activeSection)) {
-      if (orgData) return;
-      setLoadingOrg(true);
-      fetch(apiUrl("/api/org"))
-        .then(r => r.json())
-        .then(j => {
-          setOrgData(j.data);
-          setOrgForm({
-            name:     j.data.name     ?? "",
-            website:  j.data.website  ?? "",
-            industry: j.data.industry ?? "",
-            size:     j.data.size     ?? "",
-          });
-          setLoadingOrg(false);
-        })
-        .catch(() => setLoadingOrg(false));
-    }
+    if (!["organization", "team", "billing", "integrations"].includes(activeSection) || orgData) return;
+    let active = true;
+    void Promise.resolve()
+      .then(() => {
+        if (!active) return null;
+        setLoadingOrg(true);
+        return apiFetch(apiUrl("/api/org"));
+      })
+      .then(async (response) => response ? response.json() : null)
+      .then((payload) => {
+        if (!active || !payload) return;
+        setOrgData(payload.data);
+        setOrgForm({
+          name: payload.data.name ?? "",
+          website: payload.data.website ?? "",
+          industry: payload.data.industry ?? "",
+          size: payload.data.size ?? "",
+        });
+      })
+      .finally(() => {
+        if (active) setLoadingOrg(false);
+      });
+    return () => { active = false; };
   }, [activeSection, orgData]);
 
   const loadDeveloperSettings = useCallback(async () => {
     try {
-      const [keysResponse, hooksResponse] = await Promise.all([fetch(apiUrl("/api/api-keys")), fetch(apiUrl("/api/webhooks"))]);
+      const [keysResponse, hooksResponse] = await Promise.all([apiFetch(apiUrl("/api/api-keys")), apiFetch(apiUrl("/api/webhooks"))]);
       const [keysJson, hooksJson] = await Promise.all([keysResponse.json(), hooksResponse.json()]);
       if (!keysResponse.ok) throw new Error(keysJson.error);
       if (!hooksResponse.ok) throw new Error(hooksJson.error);
@@ -196,14 +207,14 @@ export default function SettingsPage() {
     } catch (error) { setActionError(error instanceof Error ? error.message : "Failed to load developer settings"); }
   }, []);
 
-  useEffect(() => { if (activeSection === "api") loadDeveloperSettings(); }, [activeSection, loadDeveloperSettings]);
+  useEffect(() => { if (activeSection === "api") void Promise.resolve().then(loadDeveloperSettings); }, [activeSection, loadDeveloperSettings]);
 
   async function updatePassword() {
     setActionError("");
     if (passwordForm.newPassword !== passwordForm.confirmPassword) { setActionError("New passwords do not match"); return; }
     setSaving(true);
     try {
-      const response = await fetch(apiUrl("/api/users/password"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(passwordForm) });
+      const response = await apiFetch(apiUrl("/api/users/password"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(passwordForm) });
       const json = await response.json(); if (!response.ok) throw new Error(json.error);
       setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" }); setToast("Password updated");
     } catch (error) { setActionError(error instanceof Error ? error.message : "Password update failed"); } finally { setSaving(false); }
@@ -211,25 +222,47 @@ export default function SettingsPage() {
 
   async function generateKey() {
     setSaving(true); setActionError("");
-    try { const response = await fetch(apiUrl("/api/api-keys"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: keyName }) }); const json = await response.json(); if (!response.ok) throw new Error(json.error); setNewKey(json.data.key); setShowKeyModal(false); setToast("API key generated"); await loadDeveloperSettings(); }
+    try { const response = await apiFetch(apiUrl("/api/api-keys"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: keyName }) }); const json = await response.json(); if (!response.ok) throw new Error(json.error); setNewKey(json.data.key); setShowKeyModal(false); setToast("API key generated"); await loadDeveloperSettings(); }
     catch (error) { setActionError(error instanceof Error ? error.message : "Key generation failed"); } finally { setSaving(false); }
   }
-  async function revokeKey(id: string) { const response = await fetch(apiUrl(`/api/api-keys/${id}`), { method: "DELETE" }); const json = await response.json(); if (!response.ok) { setActionError(json.error); return; } setToast("API key revoked"); await loadDeveloperSettings(); }
+  async function revokeKey(id: string) { const response = await apiFetch(apiUrl(`/api/api-keys/${id}`), { method: "DELETE" }); const json = await response.json(); if (!response.ok) { setActionError(json.error); return; } setToast("API key revoked"); await loadDeveloperSettings(); }
   async function saveWebhook() {
-    setSaving(true); setActionError(""); try { const response = await fetch(apiUrl("/api/webhooks"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(webhookForm) }); const json = await response.json(); if (!response.ok) throw new Error(json.error); setWebhookForm({ url: "", events: ["contact.created", "deal.won"] }); setToast("Webhook saved"); await loadDeveloperSettings(); } catch (error) { setActionError(error instanceof Error ? error.message : "Webhook save failed"); } finally { setSaving(false); }
+    setSaving(true); setActionError(""); try { const response = await apiFetch(apiUrl("/api/webhooks"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(webhookForm) }); const json = await response.json(); if (!response.ok) throw new Error(json.error); setWebhookForm({ url: "", events: ["contact.created", "deal.won"] }); setNewWebhookSecret(json.data?.signingSecret ?? ""); setToast("Webhook created"); await loadDeveloperSettings(); } catch (error) { setActionError(error instanceof Error ? error.message : "Webhook save failed"); } finally { setSaving(false); }
   }
-  async function revokeWebhook(id: string) { const response = await fetch(apiUrl(`/api/webhooks/${id}`), { method: "DELETE" }); const json = await response.json(); if (!response.ok) { setActionError(json.error); return; } setToast("Webhook removed"); await loadDeveloperSettings(); }
+  async function revokeWebhook(id: string) { const response = await apiFetch(apiUrl(`/api/webhooks/${id}`), { method: "DELETE" }); const json = await response.json(); if (!response.ok) { setActionError(json.error); return; } setToast("Webhook removed"); await loadDeveloperSettings(); }
+  const loadIntegrationStatuses = useCallback(async () => {
+    const entries = await Promise.all(INTEGRATIONS.map(async integration => {
+      const slug = integration.name.toLowerCase().replace(/\s+/g, "-");
+      const path = integration.name === "Stripe" ? "/api/integrations/stripe" : `/api/integrations/${slug}`;
+      const response = await apiFetch(apiUrl(path));
+      const json = await response.json().catch(() => ({}));
+      return [slug, { ...(json.data ?? { status: "disconnected", healthStatus: "not_configured" }), requirements: json.requirements ?? [] }] as const;
+    }));
+    setIntegrationStatuses(Object.fromEntries(entries));
+  }, []);
+
+  useEffect(() => { if (activeSection === "integrations") void Promise.resolve().then(loadIntegrationStatuses); }, [activeSection, loadIntegrationStatuses]);
+
   async function connectIntegration(name: string) {
-    setSaving(true); setActionError(""); const slug = name.toLowerCase().replace(/\s+/g, "-");
-    try { const path = name === "Stripe" ? "/api/integrations/stripe" : `/api/integrations/${slug}`; const body = name === "Stripe" ? stripeForm : {}; const response = await fetch(apiUrl(path), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); const json = await response.json(); if (!response.ok) throw new Error(json.error); setIntegrationModal(null); setOrgData(null); setToast(`${name} connected`); } catch (error) { setActionError(error instanceof Error ? error.message : "Integration update failed"); } finally { setSaving(false); }
+    if (name !== "Stripe") return;
+    setSaving(true); setActionError("");
+    try {
+      const response = await apiFetch(apiUrl("/api/integrations/stripe"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(stripeForm) });
+      const json = await response.json();
+      if (!response.ok) throw new Error(json.error);
+      setIntegrationModal(null);
+      setStripeForm({ secretKey: "", publishableKey: "", webhookSecret: "" });
+      setToast(`Stripe credentials verified. ${json.nextAction ?? "Webhook validation remains required."}`);
+      await loadIntegrationStatuses();
+    } catch (error) { setActionError(error instanceof Error ? error.message : "Integration update failed"); } finally { setSaving(false); }
   }
-  async function saveNotifications(next: NotificationPreferences) { setNotifications(next); const response = await fetch(apiUrl("/api/users/me"), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ notifications: next }) }); if (!response.ok) { const json = await response.json(); setActionError(json.error); } else setToast("Notification preferences saved"); }
-  async function saveAppearance(next: AppearancePreferences) { setAppearance(next); document.documentElement.dataset.density = next.density; document.documentElement.classList.toggle("reduce-motion", next.reduceMotion); const response = await fetch(apiUrl("/api/users/me"), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ appearance: next }) }); if (!response.ok) { const json = await response.json(); setActionError(json.error); } else setToast("Appearance saved"); }
+  async function saveNotifications(next: NotificationPreferences) { setNotifications(next); const response = await apiFetch(apiUrl("/api/users/me"), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ notifications: next }) }); if (!response.ok) { const json = await response.json(); setActionError(json.error); } else setToast("Notification preferences saved"); }
+  async function saveAppearance(next: AppearancePreferences) { setAppearance(next); document.documentElement.setAttribute("data-density", next.density); document.documentElement.classList.toggle("reduce-motion", next.reduceMotion); const response = await apiFetch(apiUrl("/api/users/me"), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ appearance: next }) }); if (!response.ok) { const json = await response.json(); setActionError(json.error); } else setToast("Appearance saved"); }
 
   async function saveProfile(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-    await fetch(apiUrl("/api/users/me"), {
+    await apiFetch(apiUrl("/api/users/me"), {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: profileForm.name, jobTitle: profileForm.jobTitle, phone: profileForm.phone, timezone: profileForm.timezone }),
     });
@@ -240,7 +273,7 @@ export default function SettingsPage() {
   async function saveOrg(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-    await fetch(apiUrl("/api/org"), {
+    await apiFetch(apiUrl("/api/org"), {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: orgForm.name, website: orgForm.website, industry: orgForm.industry, size: orgForm.size }),
     });
@@ -251,7 +284,7 @@ export default function SettingsPage() {
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();
     setInviting(true); setInviteResult(null);
-    const res = await fetch(apiUrl("/api/team/invite"), {
+    const res = await apiFetch(apiUrl("/api/team/invite"), {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(inviteForm),
     });
@@ -267,7 +300,7 @@ export default function SettingsPage() {
   }
 
   async function handleRoleChange(memberId: string, role: string) {
-    await fetch(apiUrl(`/api/team/${memberId}`), {
+    await apiFetch(apiUrl(`/api/team/${memberId}`), {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ role }),
     });
@@ -276,7 +309,7 @@ export default function SettingsPage() {
   }
 
   async function handleRemoveMember(memberId: string) {
-    await fetch(apiUrl(`/api/team/${memberId}`), { method: "DELETE" });
+    await apiFetch(apiUrl(`/api/team/${memberId}`), { method: "DELETE" });
     setOrgData(null);
   }
 
@@ -284,7 +317,7 @@ export default function SettingsPage() {
     e.preventDefault();
     if (!spendForm.amount) return;
     setAddingSpend(true);
-    const res = await fetch(apiUrl("/api/marketing-spend"), {
+    const res = await apiFetch(apiUrl("/api/marketing-spend"), {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(spendForm),
     });
@@ -297,7 +330,7 @@ export default function SettingsPage() {
   }
 
   async function handleDeleteSpend(id: string) {
-    await fetch(apiUrl(`/api/marketing-spend/${id}`), { method: "DELETE" });
+    await apiFetch(apiUrl(`/api/marketing-spend/${id}`), { method: "DELETE" });
     setSpendRows(prev => prev.filter(r => r.id !== id));
   }
 
@@ -340,10 +373,7 @@ export default function SettingsPage() {
                     <div className="rounded-xl border border-surface-800 bg-surface-900/50 p-5 space-y-4">
                       <div className="flex items-center gap-4">
                         <Avatar name={profileForm.name || "User"} size="2xl" />
-                        <div>
-                          <Button type="button" variant="outline" size="sm">Change photo</Button>
-                          <p className="text-xs text-surface-500 mt-1">JPG, GIF or PNG. Max 2MB.</p>
-                        </div>
+                        <p className="text-xs text-surface-500">Profile initials are derived from your saved name.</p>
                       </div>
                       <Input label="Full Name" value={profileForm.name} onChange={e => setProfileForm(f => ({ ...f, name: e.target.value }))} />
                       <Input label="Email Address" type="email" value={profileForm.email} readOnly className="opacity-60 cursor-not-allowed" />
@@ -388,7 +418,7 @@ export default function SettingsPage() {
                             {(orgForm.name || "O").charAt(0).toUpperCase()}
                           </span>
                         </div>
-                        <Button type="button" variant="outline" size="sm">Upload logo</Button>
+                        <p className="text-xs text-surface-500">Workspace identity uses the saved organization name.</p>
                       </div>
                       <Input label="Organization Name" value={orgForm.name} onChange={e => setOrgForm(f => ({ ...f, name: e.target.value }))} />
                       <Input label="Website" type="url" value={orgForm.website} onChange={e => setOrgForm(f => ({ ...f, website: e.target.value }))} placeholder="https://yourcompany.com" />
@@ -514,7 +544,7 @@ export default function SettingsPage() {
             {activeSection === "integrations" && (
               <div className="space-y-5">
                 <div><h2 className="text-lg font-bold text-surface-50">Integrations</h2><p className="text-sm text-surface-500 mt-0.5">Connect services through secure credentials, Zapier, or webhooks</p></div>
-                <div className="grid grid-cols-2 gap-3">{INTEGRATIONS.map(integration => { const Icon = integration.icon; const slug = integration.name.toLowerCase().replace(/\s+/g, "-"); const connected = Boolean(orgData?.settings?.integrations?.[slug]); return <div key={integration.name} className={cn("rounded-xl border p-4 flex items-center gap-3 transition-all hover:border-surface-600", connected ? "border-emerald-500/20 bg-emerald-500/5" : "border-surface-800 bg-surface-900/50")}><div className={cn("flex h-9 w-9 items-center justify-center rounded-lg", connected ? "bg-emerald-500/15" : "bg-surface-800")}><Icon size={16} className={connected ? "text-emerald-400" : "text-surface-500"} /></div><div className="flex-1 min-w-0"><p className="text-xs font-semibold text-surface-200">{integration.name}</p><p className="text-[11px] text-surface-500">{integration.category}</p></div>{connected ? <Badge variant="success" size="sm" dot>Connected</Badge> : <Button variant="outline" size="xs" onClick={() => setIntegrationModal(integration.name)}>Connect</Button>}</div>})}</div>
+                <div className="grid grid-cols-2 gap-3">{INTEGRATIONS.map(integration => { const Icon = integration.icon; const slug = integration.name.toLowerCase().replace(/\s+/g, "-"); const state = integrationStatuses[slug] ?? { status: "disconnected", healthStatus: "not_configured" }; const connected = state.status === "connected" && state.healthStatus === "healthy"; return <div key={integration.name} className={cn("rounded-xl border p-4 flex items-center gap-3", connected ? "border-emerald-500/20 bg-emerald-500/5" : "border-surface-800 bg-surface-900/50")}><div className={cn("flex h-9 w-9 items-center justify-center rounded-lg", connected ? "bg-emerald-500/15" : "bg-surface-800")}><Icon size={16} className={connected ? "text-emerald-400" : "text-surface-500"} /></div><div className="min-w-0 flex-1"><p className="text-xs font-semibold text-surface-200">{integration.name}</p><p className="text-[11px] text-surface-500">{state.healthStatus.replace(/_/g, " ")}</p>{state.lastError && <p className="mt-1 truncate text-[10px] text-amber-400">{state.lastError}</p>}</div>{connected ? <Badge variant="success" size="sm" dot>Verified</Badge> : <Button variant="outline" size="xs" onClick={() => setIntegrationModal(integration.name)}>{integration.name === "Stripe" ? "Configure" : "Requirements"}</Button>}</div>})}</div>
               </div>
             )}
 
@@ -528,7 +558,8 @@ export default function SettingsPage() {
                   {apiKeys.length === 0 ? <div className="flex flex-col items-center justify-center py-6 gap-2 text-center"><Key size={20} className="text-surface-600"/><p className="text-xs text-surface-400">No API keys have been issued</p></div> : <div className="divide-y divide-surface-800 rounded-lg border border-surface-800">{apiKeys.map(key => <div key={key.id} className="flex items-center gap-3 px-3 py-3"><div className="min-w-0 flex-1"><p className="text-xs font-semibold text-surface-200">{key.name}</p><p className="font-mono text-[10px] text-surface-500">{key.maskedKey}</p></div><span className="text-[10px] text-surface-600">{new Date(key.createdAt).toLocaleDateString("en-US")}</span><ConfirmAction label="Revoke" onConfirm={() => revokeKey(key.id)}/></div>)}</div>}
                 </div>
                 <div className="rounded-xl border border-surface-800 bg-surface-900/50 p-5 space-y-4"><h3 className="text-sm font-semibold text-surface-200">Webhooks</h3><input type="url" value={webhookForm.url} onChange={e => setWebhookForm(f => ({ ...f, url: e.target.value }))} placeholder="https://your-app.com/webhooks/nxtgen" className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 placeholder:text-surface-600 focus:outline-none focus:border-brand-500"/><div className="grid grid-cols-2 gap-2">{["contact.created","deal.won","deal.lost","campaign.sent","ticket.resolved","payment.received"].map(event => { const checked = webhookForm.events.includes(event); return <label key={event} className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={checked} onChange={() => setWebhookForm(f => ({ ...f, events: checked ? f.events.filter(value => value !== event) : [...f.events, event] }))} className="h-3.5 w-3.5 rounded border-surface-600 bg-surface-800 accent-brand-500"/><span className="font-mono text-[11px] text-surface-400">{event}</span></label>})}</div><Button variant="gradient" size="sm" icon={Webhook} loading={saving} onClick={saveWebhook}>Save webhook</Button>
-                  {webhooks.length > 0 && <div className="divide-y divide-surface-800 rounded-lg border border-surface-800">{webhooks.map(hook => <div key={hook.id} className="flex items-center gap-3 px-3 py-3"><div className="min-w-0 flex-1"><p className="truncate text-xs font-medium text-surface-200">{hook.url}</p><p className="mt-1 text-[10px] text-surface-500">{hook.events.join(" · ")}</p></div><Badge variant="success" size="sm">Active</Badge><ConfirmAction label="Remove" onConfirm={() => revokeWebhook(hook.id)}/></div>)}</div>}
+                  {newWebhookSecret && <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3"><p className="text-[11px] font-semibold text-amber-300">Copy this signing secret now. It will not be shown again.</p><div className="mt-2 flex gap-2"><code className="min-w-0 flex-1 overflow-x-auto rounded bg-surface-950 px-3 py-2 text-[10px] text-surface-200">{newWebhookSecret}</code><Button size="sm" onClick={() => navigator.clipboard.writeText(newWebhookSecret)}>Copy</Button></div></div>}
+                  {webhooks.length > 0 && <div className="divide-y divide-surface-800 rounded-lg border border-surface-800">{webhooks.map(hook => <div key={hook.id} className="flex items-center gap-3 px-3 py-3"><div className="min-w-0 flex-1"><p className="truncate text-xs font-medium text-surface-200">{hook.url}</p><p className="mt-1 text-[10px] text-surface-500">{hook.events.join(" · ")}</p></div><Badge variant={hook.active && hook.healthStatus === "healthy" ? "success" : "warning"} size="sm">{hook.active ? hook.healthStatus.replace(/_/g, " ") : "disabled"}</Badge><ConfirmAction label="Remove" onConfirm={() => revokeWebhook(hook.id)}/></div>)}</div>}
                 </div>
               </div>
             )}
@@ -648,7 +679,7 @@ export default function SettingsPage() {
 
                 <div className="rounded-xl border border-brand-500/20 bg-brand-500/5 p-4">
                   <p className="text-xs text-brand-300 font-semibold mb-1">How CAC is calculated</p>
-                  <p className="text-xs text-surface-400">CAC = total spend this month ÷ new customers acquired this month. New customers are contacts with status "customer" or "vip" created in the current calendar month.</p>
+                  <p className="text-xs text-surface-400">CAC = total spend this month ÷ new customers acquired this month. New customers are contacts with status &quot;customer&quot; or &quot;vip&quot; created in the current calendar month.</p>
                 </div>
               </div>
             )}
@@ -663,7 +694,7 @@ export default function SettingsPage() {
 
       <Modal open={showKeyModal} onClose={() => setShowKeyModal(false)} title="Generate API key"><div className="space-y-4 p-5"><Input label="Key name" value={keyName} onChange={e => setKeyName(e.target.value)} placeholder="Production integration"/><div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setShowKeyModal(false)}>Cancel</Button><Button variant="primary" loading={saving} onClick={generateKey}>Generate key</Button></div></div></Modal>
       <Modal open={showPlanModal} onClose={() => setShowPlanModal(false)} title="Change plan" width="max-w-3xl"><div className="p-5"><div className="grid grid-cols-3 gap-3">{[{name:"Starter",price:"$29",desc:"3 funnels · 5k contacts · 10k emails/mo"},{name:"Growth",price:"$79",desc:"Unlimited funnels · 25k contacts · 50k emails/mo",popular:true},{name:"Scale",price:"$199",desc:"100k contacts · 250k emails/mo · A/B testing"},{name:"Agency",price:"$499",desc:"Unlimited workspaces · White-label · SLA"}].map(plan => <div key={plan.name} className={`rounded-xl border p-4 relative ${plan.popular?"border-brand-500 bg-brand-500/5":"border-surface-800 bg-surface-950"}`}>{plan.popular&&<span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-brand-500 px-2.5 py-0.5 font-mono text-[9px] font-bold text-white tracking-wider">POPULAR</span>}<p className="text-sm font-semibold text-surface-100">{plan.name}</p><p className="mt-2 text-2xl font-bold text-surface-50">{plan.price}<span className="text-xs font-normal text-surface-500">/mo</span></p><p className="mt-1 text-[11px] text-surface-500">{plan.desc}</p><Button className="mt-4" size="sm" fullWidth onClick={() => window.open("https://space.nxtgen-stack.com/billing", "_blank", "noopener,noreferrer")}>Select Plan</Button></div>)}</div><p className="mt-4 text-xs text-surface-500">Plan changes are completed through NxtGen Space billing or by emailing <a className="text-brand-400" href="mailto:hello@nxtgen-stack.com">hello@nxtgen-stack.com</a>.</p></div></Modal>
-      <Modal open={!!integrationModal} onClose={() => setIntegrationModal(null)} title={`Connect ${integrationModal ?? "integration"}`} width="max-w-lg">{integrationModal === "Stripe" ? <div className="space-y-4 p-5"><Input label="Publishable Key" value={stripeForm.stripePublishableKey} onChange={e => setStripeForm(f => ({ ...f, stripePublishableKey: e.target.value }))} placeholder="pk_live_..."/><Input label="Webhook Secret" type="password" value={stripeForm.stripeWebhookSecret} onChange={e => setStripeForm(f => ({ ...f, stripeWebhookSecret: e.target.value }))} placeholder="whsec_..."/><Button variant="primary" fullWidth loading={saving} onClick={() => connectIntegration("Stripe")}>Save Stripe connection</Button></div> : <div className="space-y-4 p-5"><p className="text-sm leading-6 text-surface-400">Connect this service through the NxtGen Zapier integration or route events through the webhook controls in API & Webhooks.</p><div className="flex gap-2"><Button variant="outline" onClick={() => window.open("https://zapier.com/apps/nxtgen", "_blank", "noopener,noreferrer")}>Open Zapier</Button><Button variant="primary" loading={saving} onClick={() => integrationModal && connectIntegration(integrationModal)}>Mark connected</Button></div></div>}</Modal>
+      <Modal open={!!integrationModal} onClose={() => setIntegrationModal(null)} title={`${integrationModal ?? "Integration"} setup`} width="max-w-lg">{integrationModal === "Stripe" ? <div className="space-y-4 p-5"><p className="text-xs leading-5 text-surface-400">Credentials are verified directly with Stripe before the connector is stored. The webhook remains unverified until Stripe sends a valid signed event.</p><Input label="Secret Key" type="password" value={stripeForm.secretKey} onChange={e => setStripeForm(f => ({ ...f, secretKey: e.target.value }))} placeholder="sk_live_..."/><Input label="Publishable Key" value={stripeForm.publishableKey} onChange={e => setStripeForm(f => ({ ...f, publishableKey: e.target.value }))} placeholder="pk_live_..."/><Input label="Webhook Signing Secret" type="password" value={stripeForm.webhookSecret} onChange={e => setStripeForm(f => ({ ...f, webhookSecret: e.target.value }))} placeholder="whsec_..."/><Button variant="primary" fullWidth loading={saving} onClick={() => connectIntegration("Stripe")}>Verify and save</Button></div> : <div className="space-y-4 p-5"><p className="text-sm leading-6 text-surface-300">This connector is not implemented until its provider authentication and validation requirements are available.</p><div className="rounded-lg border border-surface-800 bg-surface-950 p-3"><p className="text-[11px] font-semibold text-surface-300">Required owner inputs</p><ul className="mt-2 space-y-1 text-[11px] text-surface-500">{(integrationStatuses[(integrationModal ?? "").toLowerCase().replace(/\s+/g, "-")]?.requirements ?? ["Provider application credentials and approval"]).map(item => <li key={item}>• {item}</li>)}</ul></div><Button variant="outline" fullWidth onClick={() => setIntegrationModal(null)}>Close</Button></div>}</Modal>
       {toast && <Toast message={toast}/>}
 
       {/* Invite Member Modal */}

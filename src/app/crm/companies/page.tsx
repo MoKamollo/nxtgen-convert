@@ -2,10 +2,9 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ConfirmAction } from "@/components/modules/ModulePrimitives";
 import { Button } from "@/components/ui/Button";
-import { cn } from "@/lib/utils";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import { Plus, Search, Building2, Globe, Users, X, Loader2, Pencil } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type Company = {
   id: string; name: string; domain: string | null; industry: string | null;
@@ -25,14 +24,14 @@ export default function CompaniesPage() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ name:"", domain:"", industry:"", size:"", website:"", phone:"" });
 
-  const load = () => {
+  const load = useCallback(() => {
     setLoading(true);
-    fetch(apiUrl("/api/companies")).then(r => r.json())
+    apiFetch(apiUrl("/api/companies")).then(r => r.json())
       .then(j => { setCompanies(j.data ?? []); setLoading(false); })
       .catch(() => setLoading(false));
-  };
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { void Promise.resolve().then(load); }, [load]);
 
   const filtered = companies.filter(c =>
     !search || c.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -52,9 +51,9 @@ export default function CompaniesPage() {
     if (!form.name.trim()) return;
     setSaving(true);
     if (editCompany) {
-      await fetch(apiUrl(`/api/companies/${editCompany.id}`), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+      await apiFetch(apiUrl(`/api/companies/${editCompany.id}`), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
     } else {
-      await fetch(apiUrl("/api/companies"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+      await apiFetch(apiUrl("/api/companies"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
     }
     setSaving(false);
     closeModal();
@@ -62,7 +61,7 @@ export default function CompaniesPage() {
   };
 
   const handleDelete = async (id: string) => {
-    await fetch(apiUrl(`/api/companies/${id}`), { method: "DELETE" });
+    await apiFetch(apiUrl(`/api/companies/${id}`), { method: "DELETE" });
     setCompanies(prev => prev.filter(c => c.id !== id));
   };
 

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { withTenantDatabase } from "@/db";
 import { CampaignSendError, sendCampaign } from "@/lib/campaign-send";
 import { verifyQStashRequest } from "@/lib/qstash";
 
@@ -12,11 +13,12 @@ export async function POST(
     const rawBody = await request.text();
     verifyQStashRequest(request.headers.get("upstash-signature"), rawBody, request.url);
     const body = JSON.parse(rawBody) as { organizationId?: string };
-    if (!body.organizationId) {
+    const organizationId = body.organizationId;
+    if (!organizationId) {
       return NextResponse.json({ error: "Missing organization" }, { status: 400 });
     }
     const { id } = await params;
-    return NextResponse.json(await sendCampaign(body.organizationId, id));
+    return NextResponse.json(await withTenantDatabase(organizationId, () => sendCampaign(organizationId, id)));
   } catch (error) {
     console.error("[broadcast-dispatch]", error);
     const status = error instanceof CampaignSendError ? error.status : 401;

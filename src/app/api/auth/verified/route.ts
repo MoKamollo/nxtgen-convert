@@ -1,70 +1,52 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/db";
-import { organizations, users } from "@/db/schema";
-import { eq } from "drizzle-orm";
-import { signSession, cookieHeader } from "@/lib/session";
+import { provisionAuthenticatedSession } from "@/lib/auth-provisioning";
+import { recordAudit } from "@/lib/audit";
+import { clientIp, hashSensitive, requestId } from "@/lib/request-security";
+import { cookieHeader, signSession } from "@/lib/session";
 
-const SPACE_VERIFY_TOKEN_URL = "https://space.nxtgen-stack.com/api/auth/verify-auto-token.php";
-
-function spaceIdToUUID(id: string): string {
-  const hex = id.replace(/^[a-z]+_/i, "").replace(/[^a-f0-9]/gi, "").padEnd(32, "0").slice(0, 32);
-  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20,32)}`;
-}
+const SPACE_VERIFY_TOKEN_URL = process.env.SPACE_VERIFY_TOKEN_URL ?? "https://space.nxtgen-stack.com/api/auth/verify-auto-token.php";
 
 export async function GET(request: NextRequest) {
+  const id = requestId(request);
+  const ip = clientIp(request);
+  const userAgent = request.headers.get("user-agent") ?? "unknown";
   const autoToken = request.nextUrl.searchParams.get("auto_token") ?? "";
-  const fallback  = new URL("/login?verified=1", request.url);
+  const fallback = new URL("/login?error=verification_failed", request.url);
 
-  if (!autoToken) return NextResponse.redirect(fallback);
+  if (!autoToken || autoToken.length > 4096) return NextResponse.redirect(fallback);
 
   try {
     const spaceRes = await fetch(SPACE_VERIFY_TOKEN_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Request-ID": id },
       body: JSON.stringify({ auto_token: autoToken }),
+      signal: AbortSignal.timeout(15_000),
+      cache: "no-store",
     });
-
-    if (!spaceRes.ok) return NextResponse.redirect(fallback);
-    const spaceData = await spaceRes.json();
-    const u = spaceData?.user;
-    if (!u?.id || !u?.email || !u?.tenant_id) return NextResponse.redirect(fallback);
-
-    const { id: userId, email, name, tenant_id: rawTenantId, role, plan } = u;
-    const tenantId = rawTenantId.includes("-") ? rawTenantId : spaceIdToUUID(rawTenantId);
-
-    // Auto-provision Convert org
-    const existing = await db
-      .select({ id: organizations.id })
-      .from(organizations)
-      .where(eq(organizations.id, tenantId))
-      .limit(1);
-
-    if (existing.length === 0) {
-      const existingUser = await db
-        .select({ organizationId: users.organizationId })
-        .from(users)
-        .where(eq(users.email, email.toLowerCase()))
-        .limit(1);
-
-      if (existingUser.length > 0 && existingUser[0].organizationId) {
-        // reuse existing org
-      } else {
-        await db.insert(organizations).values({
-          id: tenantId,
-          name: (name ?? email) + "'s Workspace",
-          slug: rawTenantId,
-          plan: "starter",
-        });
-      }
+    const spaceData = await spaceRes.json().catch(() => ({}));
+    const user = spaceData?.user;
+    if (!spaceRes.ok || !user?.id || !user?.email || !user?.tenant_id) {
+      await recordAudit({ action: "auth.auto_token", result: "denied", requestId: id, ipHash: hashSensitive(ip), userAgentHash: hashSensitive(userAgent), metadata: { upstreamStatus: spaceRes.status } });
+      return NextResponse.redirect(fallback);
     }
 
-    const token = await signSession({ userId, tenantId, email, name: name ?? email, role: role ?? "owner", plan: plan ?? "starter" });
+    const payload = await provisionAuthenticatedSession({
+      externalUserId: String(user.id),
+      externalTenantId: String(user.tenant_id),
+      email: String(user.email),
+      name: String(user.name ?? user.email),
+      role: user.role,
+      plan: user.plan,
+    }, { ip, userAgent });
+
+    const token = await signSession(payload);
     const response = NextResponse.redirect(new URL("/dashboard", request.url));
     response.headers.set("Set-Cookie", cookieHeader(token));
+    await recordAudit({ organizationId: payload.tenantId, actorUserId: payload.userId, action: "auth.auto_token", result: "success", requestId: id, ipHash: hashSensitive(ip), userAgentHash: hashSensitive(userAgent), metadata: { sessionId: payload.sessionId } });
     return response;
-
-  } catch (err) {
-    console.error("[convert verified]", err);
+  } catch (error) {
+    console.error("[auth.verified]", error);
+    await recordAudit({ action: "auth.auto_token", result: "failure", requestId: id, ipHash: hashSensitive(ip), userAgentHash: hashSensitive(userAgent) });
     return NextResponse.redirect(fallback);
   }
 }

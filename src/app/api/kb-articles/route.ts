@@ -1,3 +1,4 @@
+import { withApiGuard } from "@/lib/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { kbArticles } from "@/db/schema";
@@ -5,7 +6,7 @@ import { desc, eq } from "drizzle-orm";
 
 function slugify(value: string) { return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   const orgId = request.headers.get("x-tenant-id");
   if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   try {
@@ -16,7 +17,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+async function POSTHandler(request: NextRequest) {
   const orgId = request.headers.get("x-tenant-id");
   if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   try {
@@ -28,3 +29,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Failed to create article" }, { status: 500 });
   }
 }
+
+export const GET = withApiGuard(GETHandler);
+export const POST = withApiGuard(POSTHandler);

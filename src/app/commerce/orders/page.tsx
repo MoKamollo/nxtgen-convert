@@ -2,16 +2,18 @@
 
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/Button";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import { formatCurrency } from "@/lib/utils";
 import { ConfirmAction, EmptyState, ErrorState, Field, FilterTabs, inputClass, LoadingState, Modal, ModuleHeader, SearchField, StatGrid, StatusBadge, textareaClass, Toast } from "@/components/modules/ModulePrimitives";
-import { CalendarDays, DollarSign, Eye, PackageCheck, Plus, ReceiptText, ShoppingCart } from "lucide-react";
+import { CalendarDays, DollarSign, Eye, Plus, ReceiptText, ShoppingCart } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 type OrderItem = { productId?: string; name: string; quantity: number; price: number };
 type Order = { id: string; orderNumber: string; contactId: string | null; contactFirstName: string | null; contactLastName: string | null; contactEmail: string | null; status: string; subtotal: string; tax: string; discount: string; total: string; currency: string; items: OrderItem[]; paymentMethod: string | null; paymentStatus: string; notes: string | null; createdAt: string };
 type Contact = { id: string; firstName: string; lastName: string | null; email: string | null };
 type Product = { id: string; name: string; price: string };
+
+const CURRENT_MONTH = new Date().toISOString().slice(0, 7);
 
 const emptyForm = { contactId: "", status: "pending", paymentMethod: "card", paymentStatus: "pending", tax: "0", discount: "0", notes: "", items: [{ productId: "", name: "", quantity: 1, price: 0 }] as OrderItem[] };
 
@@ -36,7 +38,7 @@ export default function OrdersPage() {
   const load = useCallback(async (nextPage = 1, append = false) => {
     setError(""); if (!append) setLoading(true);
     try {
-      const response = await fetch(apiUrl("/api/orders", { page: String(nextPage), limit: "25", status, q: search }));
+      const response = await apiFetch(apiUrl("/api/orders", { page: String(nextPage), limit: "25", status, q: search }));
       const json = await response.json();
       if (!response.ok) throw new Error(json.error ?? "Failed to load orders");
       setOrders(current => append ? [...current, ...(json.data ?? [])] : (json.data ?? []));
@@ -46,11 +48,10 @@ export default function OrdersPage() {
   }, [search, status]);
 
   useEffect(() => { const id = window.setTimeout(() => load(1), 200); return () => window.clearTimeout(id); }, [load]);
-  useEffect(() => { Promise.all([fetch(apiUrl("/api/contacts", { limit: "200" })).then(r => r.json()), fetch(apiUrl("/api/products")).then(r => r.json())]).then(([c, p]) => { setContacts(c.data ?? []); setProducts(p.data ?? []); }).catch(() => {}); }, []);
+  useEffect(() => { Promise.all([apiFetch(apiUrl("/api/contacts", { limit: "200" })).then(r => r.json()), apiFetch(apiUrl("/api/products")).then(r => r.json())]).then(([c, p]) => { setContacts(c.data ?? []); setProducts(p.data ?? []); }).catch(() => {}); }, []);
 
   const displayed = useMemo(() => [...orders].sort((a, b) => sort === "oldest" ? +new Date(a.createdAt) - +new Date(b.createdAt) : sort === "highest" ? Number(b.total) - Number(a.total) : sort === "lowest" ? Number(a.total) - Number(b.total) : +new Date(b.createdAt) - +new Date(a.createdAt)), [orders, sort]);
-  const month = new Date().toISOString().slice(0, 7);
-  const revenueThisMonth = orders.filter(order => order.createdAt.slice(0, 7) === month && order.status === "completed").reduce((sum, order) => sum + Number(order.total), 0);
+  const revenueThisMonth = orders.filter(order => order.createdAt.slice(0, 7) === CURRENT_MONTH && order.status === "completed").reduce((sum, order) => sum + Number(order.total), 0);
   const avgValue = orders.length ? orders.reduce((sum, order) => sum + Number(order.total), 0) / orders.length : 0;
   const subtotal = form.items.reduce((sum, item) => sum + Number(item.quantity) * Number(item.price), 0);
   const grandTotal = Math.max(0, subtotal + Number(form.tax || 0) - Number(form.discount || 0));
@@ -61,7 +62,7 @@ export default function OrdersPage() {
   async function createOrder(event: React.FormEvent) {
     event.preventDefault(); setSaving(true); setError("");
     try {
-      const response = await fetch(apiUrl("/api/orders"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+      const response = await apiFetch(apiUrl("/api/orders"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
       const json = await response.json(); if (!response.ok) throw new Error(json.error ?? "Failed to create order");
       setShowCreate(false); setForm(emptyForm); setToast("Order created"); await load(1);
     } catch (err) { setError(err instanceof Error ? err.message : "Failed to create order"); }
@@ -70,11 +71,11 @@ export default function OrdersPage() {
 
   async function updateStatus(order: Order, nextStatus: string) {
     const previous = order.status; setOrders(current => current.map(item => item.id === order.id ? { ...item, status: nextStatus } : item));
-    const response = await fetch(apiUrl(`/api/orders/${order.id}`), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: nextStatus }) });
+    const response = await apiFetch(apiUrl(`/api/orders/${order.id}`), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: nextStatus }) });
     if (!response.ok) setOrders(current => current.map(item => item.id === order.id ? { ...item, status: previous } : item)); else setToast("Order updated");
   }
 
-  async function remove(id: string) { const previous = orders; setOrders(current => current.filter(order => order.id !== id)); const response = await fetch(apiUrl(`/api/orders/${id}`), { method: "DELETE" }); if (!response.ok) setOrders(previous); else setToast("Order deleted"); }
+  async function remove(id: string) { const previous = orders; setOrders(current => current.filter(order => order.id !== id)); const response = await apiFetch(apiUrl(`/api/orders/${id}`), { method: "DELETE" }); if (!response.ok) setOrders(previous); else setToast("Order deleted"); }
 
   return <AppLayout><div className="space-y-5 p-6 animate-fade-in">
     <ModuleHeader title="Orders" description={`Showing ${orders.length} of ${total} orders`} action={<Button variant="gradient" size="sm" icon={Plus} onClick={() => setShowCreate(true)}>New Order</Button>} />

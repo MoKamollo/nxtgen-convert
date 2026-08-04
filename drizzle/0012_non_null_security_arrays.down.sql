@@ -1,0 +1,3 @@
+ALTER TABLE webhook_endpoints ALTER COLUMN events DROP NOT NULL;
+ALTER TABLE api_keys ALTER COLUMN scopes DROP NOT NULL;
+ALTER TABLE connector_accounts ALTER COLUMN scopes DROP NOT NULL;

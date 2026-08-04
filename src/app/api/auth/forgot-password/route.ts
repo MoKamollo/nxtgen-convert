@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { clientIp, isSameOriginMutation, isValidCsrfToken } from "@/lib/request-security";
 
 const SPACE_FORGOT_PASSWORD_URL = "https://space.nxtgen-stack.com/api/auth/forgot-password.php";
 
 export async function POST(request: NextRequest) {
+  if (!isSameOriginMutation(request) || !isValidCsrfToken(request)) {
+    return NextResponse.json({ error: "Request verification failed" }, { status: 403 });
+  }
+  const rate = await checkRateLimit(clientIp(request), "auth.forgot_password", 5, 60 * 60);
+  if (!rate.allowed) return NextResponse.json({ error: "Too many reset requests. Try again later." }, { status: 429 });
   try {
     const body = await request.json();
     const email = String(body.email ?? "").trim().toLowerCase();

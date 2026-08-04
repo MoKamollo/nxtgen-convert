@@ -2,11 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { npsResponses } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { clientIp } from "@/lib/request-security";
 
 // Public route — no auth header required
 export async function POST(request: NextRequest) {
+  const rate = await checkRateLimit(clientIp(request), "nps.submit", 30, 60 * 60);
+  if (!rate.allowed) return NextResponse.json({ error: "Too many attempts" }, { status: 429 });
   const body = await request.json();
-  if (!body.token) return NextResponse.json({ error: "token required" }, { status: 400 });
+  if (!body.token || String(body.token).length > 256) return NextResponse.json({ error: "token required" }, { status: 400 });
   if (body.score === undefined || body.score === null) {
     return NextResponse.json({ error: "score required" }, { status: 400 });
   }
@@ -21,7 +25,7 @@ export async function POST(request: NextRequest) {
 
   await db.update(npsResponses).set({
     score,
-    feedback: body.feedback ?? null,
+    feedback: body.feedback ? String(body.feedback).trim().slice(0, 5000) : null,
     submittedAt: new Date(),
   }).where(eq(npsResponses.token, body.token));
 
@@ -30,6 +34,8 @@ export async function POST(request: NextRequest) {
 
 // GET — let the survey page read the token status
 export async function GET(request: NextRequest) {
+  const rate = await checkRateLimit(clientIp(request), "nps.read", 120, 60 * 60);
+  if (!rate.allowed) return NextResponse.json({ error: "Too many attempts" }, { status: 429 });
   const token = new URL(request.url).searchParams.get("token");
   if (!token) return NextResponse.json({ error: "token required" }, { status: 400 });
 

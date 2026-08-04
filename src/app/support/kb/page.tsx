@@ -15,9 +15,10 @@ import {
   textareaClass,
   Toast,
 } from "@/components/modules/ModulePrimitives";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import { BookOpen, Edit3, Eye, Plus, ThumbsDown, ThumbsUp } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 type Article = {
   id: string;
   title: string;
@@ -41,13 +42,14 @@ const blank = {
   tags: "",
   status: "draft",
 };
-export default function KnowledgeBase() {
+function KnowledgeBaseInner() {
+  const searchParams = useSearchParams();
   const [data, setData] = useState<Article[]>([]),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
     [search, setSearch] = useState(""),
     [category, setCategory] = useState("all"),
-    [open, setOpen] = useState(false),
+    [open, setOpen] = useState(() => searchParams.get("create") === "true"),
     [view, setView] = useState<Article | null>(null),
     [editing, setEditing] = useState<Article | null>(null),
     [saving, setSaving] = useState(false),
@@ -56,7 +58,7 @@ export default function KnowledgeBase() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch(apiUrl("/api/kb-articles"));
+      const r = await apiFetch(apiUrl("/api/kb-articles"));
       const j = await r.json();
       if (!r.ok) throw new Error(j.error);
       setData(j.data);
@@ -69,12 +71,8 @@ export default function KnowledgeBase() {
     }
   }, []);
   useEffect(() => {
-    load();
+    void Promise.resolve().then(load);
   }, [load]);
-  useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("create") === "true")
-      begin();
-  }, []);
   const categories = [...new Set(data.map((a) => a.category || "General"))];
   const rows = useMemo(
     () =>
@@ -114,8 +112,7 @@ export default function KnowledgeBase() {
           .map((x) => x.trim())
           .filter(Boolean),
       };
-      const r = await fetch(
-        apiUrl(editing ? `/api/kb-articles/${editing.id}` : "/api/kb-articles"),
+      const r = await apiFetch(apiUrl(editing ? `/api/kb-articles/${editing.id}` : "/api/kb-articles"),
         {
           method: editing ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },
@@ -134,7 +131,7 @@ export default function KnowledgeBase() {
     }
   };
   const vote = async (id: string, helpful: boolean) => {
-    await fetch(apiUrl(`/api/kb-articles/${id}`), {
+    await apiFetch(apiUrl(`/api/kb-articles/${id}`), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ helpful }),
@@ -143,7 +140,7 @@ export default function KnowledgeBase() {
     await load();
   };
   const del = async (id: string) => {
-    await fetch(apiUrl(`/api/kb-articles/${id}`), { method: "DELETE" });
+    await apiFetch(apiUrl(`/api/kb-articles/${id}`), { method: "DELETE" });
     setToast("Article deleted");
     await load();
   };
@@ -411,5 +408,13 @@ export default function KnowledgeBase() {
         {toast && <Toast message={toast} />}
       </div>
     </AppLayout>
+  );
+}
+
+export default function KnowledgeBase() {
+  return (
+    <Suspense fallback={null}>
+      <KnowledgeBaseInner />
+    </Suspense>
   );
 }

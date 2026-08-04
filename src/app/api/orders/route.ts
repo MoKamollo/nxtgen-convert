@@ -1,3 +1,5 @@
+import { randomBytes } from "crypto";
+import { withApiGuard } from "@/lib/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { contacts, orders, products } from "@/db/schema";
@@ -14,7 +16,7 @@ const ORDER_STATUSES = new Set(["pending", "completed", "refunded", "cancelled"]
 const PAYMENT_STATUSES = new Set(["pending", "paid", "failed", "refunded"]);
 const PAYMENT_METHODS = new Set(["cash", "card", "bank_transfer", "stripe"]);
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   const orgId = request.headers.get("x-tenant-id");
   if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
@@ -94,7 +96,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+async function POSTHandler(request: NextRequest) {
   const orgId = request.headers.get("x-tenant-id");
   if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
@@ -183,10 +185,7 @@ export async function POST(request: NextRequest) {
     }
 
     const total = Math.max(0, subtotal + tax - discount);
-    const orderNumber = `NX-${Date.now().toString(36).toUpperCase()}-${Math.random()
-      .toString(36)
-      .slice(2, 6)
-      .toUpperCase()}`;
+    const orderNumber = `NX-${Date.now().toString(36).toUpperCase()}-${randomBytes(3).toString("hex").toUpperCase()}`;
     const [created] = await db
       .insert(orders)
       .values({
@@ -211,3 +210,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Failed to create order" }, { status: 500 });
   }
 }
+
+export const GET = withApiGuard(GETHandler);
+export const POST = withApiGuard(POSTHandler);

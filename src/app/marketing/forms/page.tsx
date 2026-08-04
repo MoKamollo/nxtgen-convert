@@ -18,7 +18,7 @@ import {
   Toast,
 } from "@/components/modules/ModulePrimitives";
 import { Button } from "@/components/ui/Button";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import {
   Clipboard,
   Code2,
@@ -85,7 +85,7 @@ export default function MarketingFormsPage() {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(apiUrl("/api/forms"));
+      const response = await apiFetch(apiUrl("/api/forms"));
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error);
       setData(payload.data ?? []);
@@ -97,7 +97,7 @@ export default function MarketingFormsPage() {
   }, []);
 
   useEffect(() => {
-    load();
+    void Promise.resolve().then(load);
   }, [load]);
 
   useEffect(() => {
@@ -156,7 +156,7 @@ export default function MarketingFormsPage() {
 
     setSaving(true);
     try {
-      const response = await fetch(apiUrl("/api/forms"), {
+      const response = await apiFetch(apiUrl("/api/forms"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -175,7 +175,7 @@ export default function MarketingFormsPage() {
   }
 
   async function patch(id: string, status: string) {
-    const response = await fetch(apiUrl(`/api/forms/${id}`), {
+    const response = await apiFetch(apiUrl(`/api/forms/${id}`), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
@@ -190,7 +190,7 @@ export default function MarketingFormsPage() {
   }
 
   async function remove(id: string) {
-    const response = await fetch(apiUrl(`/api/forms/${id}`), { method: "DELETE" });
+    const response = await apiFetch(apiUrl(`/api/forms/${id}`), { method: "DELETE" });
     const payload = await response.json();
     if (!response.ok) {
       setError(payload.error ?? "Failed to delete form");
@@ -214,7 +214,7 @@ export default function MarketingFormsPage() {
     setSubmissions([]);
     setSubmissionsLoading(true);
     try {
-      const response = await fetch(apiUrl(`/api/forms/${item.id}/submissions`));
+      const response = await apiFetch(apiUrl(`/api/forms/${item.id}/submissions`));
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error);
       setSubmissions(payload.data ?? []);
@@ -533,9 +533,7 @@ export default function MarketingFormsPage() {
                 )}
               </Field>
             ))}
-            <Button variant="primary" fullWidth>
-              Submit
-            </Button>
+            <p className="rounded-lg border border-surface-800 bg-surface-950/40 px-3 py-2 text-center text-[10px] text-surface-500">Preview only. Live submissions use the published embed endpoint.</p>
             <button
               className="flex items-center gap-1 text-[10px] text-surface-600"
               onClick={() => copy(preview.embedCode)}

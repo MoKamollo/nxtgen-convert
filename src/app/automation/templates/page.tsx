@@ -12,7 +12,7 @@ import {
   StatusBadge,
   Toast,
 } from "@/components/modules/ModulePrimitives";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import { ArrowRight, Clock3, Eye, Library, Plus, Workflow } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 type Step = { type: string; action: string; delay?: string };
@@ -26,6 +26,15 @@ type Template = {
   steps: Step[];
   tags: string[];
 };
+
+async function fetchAutomationTemplates(): Promise<Template[]> {
+  const response = await apiFetch(apiUrl("/api/automation/templates"));
+  const json = await response.json();
+  if (!response.ok) {
+    throw new Error(json.error ?? "Failed to load templates");
+  }
+  return Array.isArray(json.data) ? json.data : [];
+}
 export default function Templates() {
   const [data, setData] = useState<Template[]>([]),
     [loading, setLoading] = useState(true),
@@ -37,20 +46,35 @@ export default function Templates() {
     [toast, setToast] = useState("");
   const load = useCallback(async () => {
     setLoading(true);
+    setError("");
     try {
-      const r = await fetch(apiUrl("/api/automation/templates"));
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.error);
-      setData(j.data);
+      setData(await fetchAutomationTemplates());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load templates");
     } finally {
       setLoading(false);
     }
   }, []);
+
   useEffect(() => {
-    load();
-  }, [load]);
+    let active = true;
+    void fetchAutomationTemplates()
+      .then((templates) => {
+        if (!active) return;
+        setData(templates);
+        setError("");
+      })
+      .catch((cause: unknown) => {
+        if (!active) return;
+        setError(cause instanceof Error ? cause.message : "Failed to load templates");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
   const categories = [...new Set(data.map((t) => t.category))];
   const filtered = useMemo(
     () =>
@@ -63,10 +87,10 @@ export default function Templates() {
       ),
     [data, tab, search],
   );
-  const useTemplate = async (t: Template) => {
+  const applyTemplate = async (t: Template) => {
     setSaving(t.id);
     try {
-      const r = await fetch(apiUrl("/api/workflows"), {
+      const r = await apiFetch(apiUrl("/api/workflows"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -168,7 +192,7 @@ export default function Templates() {
                         variant="primary"
                         iconRight={ArrowRight}
                         loading={saving === t.id}
-                        onClick={() => useTemplate(t)}
+                        onClick={() => applyTemplate(t)}
                       >
                         Use template
                       </Button>
@@ -219,7 +243,7 @@ export default function Templates() {
                 <Button
                   variant="primary"
                   loading={saving === preview.id}
-                  onClick={() => useTemplate(preview)}
+                  onClick={() => applyTemplate(preview)}
                 >
                   Create draft workflow
                 </Button>

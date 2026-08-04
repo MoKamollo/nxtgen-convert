@@ -1,18 +1,18 @@
 "use client";
+import Link from "next/link";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card } from "@/components/ui/Card";
-import { Badge, StatusBadge } from "@/components/ui/Badge";
-import { Button, IconButton } from "@/components/ui/Button";
+import { StatusBadge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
-import { Input, Select } from "@/components/ui/Input";
 import { ConfirmAction, Toast } from "@/components/modules/ModulePrimitives";
 import { formatCurrency, timeAgo, cn } from "@/lib/utils";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import {
-  Search, Plus, Filter, Download, Upload, MoreHorizontal,
-  Mail, Phone, Star, ChevronDown, SlidersHorizontal,
-  Grid3X3, List, Users, Tag, Building2, TrendingUp,
-  ArrowUpDown, Pencil, BarChart2,
+  Search, Plus, Download, Upload,
+  Mail, Phone,
+  Grid3X3, List, Users, Building2,
+  Pencil, BarChart2,
 } from "lucide-react";
 import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
@@ -24,25 +24,15 @@ type Contact = {
   source: string; lastContactedAt: string | null; revenue: number;
 };
 
-const filterOptions = [
-  { value: "all", label: "All Contacts" },
-  { value: "lead", label: "Leads" },
-  { value: "prospect", label: "Prospects" },
-  { value: "customer", label: "Customers" },
-  { value: "vip", label: "VIP" },
-  { value: "churned", label: "Churned" },
-];
-
 function ContactsPageInner() {
   const searchParams = useSearchParams();
   const [view, setView] = useState<"table" | "grid">("table");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState(() => searchParams.get("status") ?? "all");
   const [selected, setSelected] = useState<string[]>([]);
-  const [sortBy, setSortBy] = useState("score");
   const [allContacts, setAllContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
+  const [showModal, setShowModal] = useState(() => searchParams.get("create") === "true");
   const [editContact, setEditContact] = useState<Contact | null>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ firstName:"", lastName:"", email:"", phone:"", status:"lead", jobTitle:"", source:"" });
@@ -58,11 +48,11 @@ function ContactsPageInner() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [npsSending, setNpsSending] = useState<string | null>(null);
   const [npsSuccess, setNpsSuccess] = useState<string | null>(null);
-  const [npsError, setNpsError] = useState("");
+  const [toast, setToast] = useState("");
 
   const load = useCallback(() => {
     setLoading(true);
-    fetch(apiUrl("/api/contacts", { page: "1", limit: String(PAGE_SIZE) }))
+    apiFetch(apiUrl("/api/contacts", { page: "1", limit: String(PAGE_SIZE) }))
       .then((r) => r.json())
       .then((j) => { setAllContacts(j.data ?? []); setTotalCount(j.total ?? 0); setPage(1); setLoading(false); })
       .catch(() => setLoading(false));
@@ -73,16 +63,13 @@ function ContactsPageInner() {
     setLoadingMore(true);
     const nextPage = page + 1;
     try {
-      const response = await fetch(apiUrl("/api/contacts", { page: String(nextPage), limit: String(PAGE_SIZE) }));
+      const response = await apiFetch(apiUrl("/api/contacts", { page: String(nextPage), limit: String(PAGE_SIZE) }));
       const json = await response.json();
       if (response.ok) { setAllContacts(prev => [...prev, ...(json.data ?? [])]); setTotalCount(json.total ?? totalCount); setPage(nextPage); }
     } finally { setLoadingMore(false); }
   };
 
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("create") === "true") setShowModal(true);
-  }, []);
+  useEffect(() => { void Promise.resolve().then(load); }, [load]);
 
   const openCreate = () => {
     setEditContact(null);
@@ -101,13 +88,13 @@ function ContactsPageInner() {
     if (!form.firstName.trim()) return;
     setSaving(true);
     if (editContact) {
-      await fetch(apiUrl(`/api/contacts/${editContact.id}`), {
+      await apiFetch(apiUrl(`/api/contacts/${editContact.id}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
     } else {
-      await fetch(apiUrl("/api/contacts"), {
+      await apiFetch(apiUrl("/api/contacts"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -121,9 +108,9 @@ function ContactsPageInner() {
   };
 
   const handleSendNps = async (contactId: string, email: string) => {
-    if (!email) { setNpsError("This contact has no email address."); return; }
+    if (!email) { setToast("This contact has no email address."); return; }
     setNpsSending(contactId);
-    const res = await fetch(apiUrl("/api/nps/send"), {
+    const res = await apiFetch(apiUrl("/api/nps/send"), {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ contactId }),
     });
@@ -133,13 +120,55 @@ function ContactsPageInner() {
       setTimeout(() => setNpsSuccess(c => c === contactId ? null : c), 3000);
     } else {
       const j = await res.json();
-      setNpsError(j.error ?? "Failed to send NPS survey");
+      setToast(j.error ?? "Failed to send NPS survey");
     }
   };
 
   const handleDelete = async (id: string) => {
-    await fetch(apiUrl(`/api/contacts/${id}`), { method: "DELETE" });
+    await apiFetch(apiUrl(`/api/contacts/${id}`), { method: "DELETE" });
     setAllContacts(prev => prev.filter(c => c.id !== id));
+  };
+
+  const exportLoadedContacts = () => {
+    const rows = filtered.map((contact) => [
+      contact.firstName,
+      contact.lastName ?? "",
+      contact.email ?? "",
+      contact.phone ?? "",
+      contact.status,
+      contact.company ?? "",
+      contact.jobTitle ?? "",
+      contact.source ?? "",
+      String(contact.score ?? 0),
+    ]);
+    const escapeCsv = (value: string) => `"${String(value).replaceAll('"', '""')}"`;
+    const csv = [["First name", "Last name", "Email", "Phone", "Status", "Company", "Job title", "Source", "Score"], ...rows]
+      .map((row) => row.map((value) => escapeCsv(String(value))).join(","))
+      .join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `nxtgen-convert-contacts-${new Date().toISOString().slice(0, 10)}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    setToast(`${rows.length} loaded contact${rows.length === 1 ? "" : "s"} exported`);
+  };
+
+  const archiveSelected = async () => {
+    const ids = [...selected];
+    const results = await Promise.allSettled(ids.map((id) => apiFetch(apiUrl(`/api/contacts/${id}`), {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: "bulk_archive" }),
+    }).then((response) => {
+      if (!response.ok) throw new Error(`Archive failed for ${id}`);
+      return id;
+    })));
+    const archived = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
+    setAllContacts((current) => current.filter((contact) => !archived.includes(contact.id)));
+    setSelected([]);
+    setTotalCount((current) => Math.max(0, current - archived.length));
+    setToast(`${archived.length} contact${archived.length === 1 ? "" : "s"} archived`);
   };
 
   const handleImportFile = async (file: File) => {
@@ -149,7 +178,7 @@ function ContactsPageInner() {
     setImportResult(null);
     const fd = new FormData();
     fd.append("file", file);
-    const res = await fetch(apiUrl("/api/contacts/import"), { method: "POST", body: fd });
+    const res = await apiFetch(apiUrl("/api/contacts/import"), { method: "POST", body: fd });
     const json = await res.json();
     setImporting(false);
     if (!res.ok) { setImportError(json.error ?? "Import failed"); return; }
@@ -201,8 +230,8 @@ function ContactsPageInner() {
             <Button variant="outline" size="sm" icon={Upload} onClick={() => { setShowImport(true); setImportResult(null); setImportError(null); }}>
               Import
             </Button>
-            <Button variant="outline" size="sm" icon={Download}>
-              Export
+            <Button variant="outline" size="sm" icon={Download} onClick={exportLoadedContacts} disabled={filtered.length === 0}>
+              Export Loaded
             </Button>
             <Button variant="gradient" size="sm" icon={Plus} onClick={openCreate}>
               Add Contact
@@ -251,17 +280,6 @@ function ContactsPageInner() {
             />
           </div>
 
-          <button className="flex items-center gap-1.5 h-8 rounded-lg border border-surface-700 bg-surface-900 px-3 text-xs text-surface-400 hover:text-surface-200 hover:border-surface-600 transition-all">
-            <Filter size={13} />
-            Filters
-            <ChevronDown size={12} />
-          </button>
-
-          <button className="flex items-center gap-1.5 h-8 rounded-lg border border-surface-700 bg-surface-900 px-3 text-xs text-surface-400 hover:text-surface-200 hover:border-surface-600 transition-all">
-            <Tag size={13} />
-            Tags
-          </button>
-
           <div className="flex-1" />
 
           {selected.length > 0 && (
@@ -269,15 +287,7 @@ function ContactsPageInner() {
               <span className="text-xs text-surface-400">
                 {selected.length} selected
               </span>
-              <Button variant="outline" size="sm">
-                Tag
-              </Button>
-              <Button variant="outline" size="sm">
-                Assign
-              </Button>
-              <Button variant="danger" size="sm">
-                Delete
-              </Button>
+              <ConfirmAction label="Archive selected" onConfirm={archiveSelected} />
             </div>
           )}
 
@@ -376,9 +386,13 @@ function ContactsPageInner() {
                             size="sm"
                           />
                           <div className="min-w-0">
-                            <p className="text-xs font-semibold text-surface-100 truncate">
+                            <Link
+                              href={`/crm/contacts/${contact.id}`}
+                              onClick={(event) => event.stopPropagation()}
+                              className="text-xs font-semibold text-surface-100 hover:text-brand-400 truncate block"
+                            >
                               {contact.firstName} {contact.lastName}
-                            </p>
+                            </Link>
                             <p className="text-[11px] text-surface-500 truncate">
                               {contact.email}
                             </p>
@@ -549,7 +563,7 @@ function ContactsPageInner() {
                   </div>
                   <div className="mt-3 w-full">
                     <div className="flex items-center justify-between text-xs mb-1">
-                      <span className="text-surface-500">AI Score</span>
+                      <span className="text-surface-500">Lead Score</span>
                       <span className="font-semibold text-surface-200">
                         {contact.score}
                       </span>
@@ -566,12 +580,8 @@ function ContactsPageInner() {
                     </div>
                   </div>
                   <div className="mt-3 flex items-center gap-2 w-full opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button className="flex-1 flex items-center justify-center gap-1 h-7 rounded-lg bg-surface-800 hover:bg-surface-700 text-xs text-surface-300 transition-colors">
-                      <Mail size={11} /> Email
-                    </button>
-                    <button className="flex-1 flex items-center justify-center gap-1 h-7 rounded-lg bg-surface-800 hover:bg-surface-700 text-xs text-surface-300 transition-colors">
-                      <Phone size={11} /> Call
-                    </button>
+                    {contact.email ? <a href={`mailto:${contact.email}`} className="flex-1 flex items-center justify-center gap-1 h-7 rounded-lg bg-surface-800 hover:bg-surface-700 text-xs text-surface-300 transition-colors"><Mail size={11} /> Email</a> : null}
+                    {contact.phone ? <a href={`tel:${contact.phone}`} className="flex-1 flex items-center justify-center gap-1 h-7 rounded-lg bg-surface-800 hover:bg-surface-700 text-xs text-surface-300 transition-colors"><Phone size={11} /> Call</a> : null}
                     <button
                       onClick={() => handleSendNps(contact.id, contact.email)}
                       disabled={npsSending === contact.id || !contact.email}
@@ -591,6 +601,7 @@ function ContactsPageInner() {
         )}
       </div>
 
+      {toast && <Toast message={toast} />}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="w-full max-w-lg rounded-2xl border border-surface-700 bg-surface-900 shadow-2xl">

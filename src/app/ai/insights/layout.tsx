@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 export const metadata: Metadata = {
-  title: "AI Insights",
-  description: "AI-powered recommendations and insights to grow your revenue faster.",
+  title: "Operational Signals",
+  description: "Explainable operational signals derived from current NxtGen Convert records.",
 };
 export default function Layout({ children }: { children: React.ReactNode }) {
   return <>{children}</>;

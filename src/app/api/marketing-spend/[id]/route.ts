@@ -1,9 +1,10 @@
+import { withApiGuard } from "@/lib/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { marketingSpend } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 
-export async function DELETE(
+async function DELETEHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -18,7 +19,7 @@ export async function DELETE(
   return NextResponse.json({ ok: true });
 }
 
-export async function PATCH(
+async function PATCHHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -42,3 +43,6 @@ export async function PATCH(
   if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ data: row });
 }
+
+export const DELETE = withApiGuard(DELETEHandler);
+export const PATCH = withApiGuard(PATCHHandler);

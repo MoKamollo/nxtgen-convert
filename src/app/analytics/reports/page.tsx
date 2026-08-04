@@ -9,7 +9,7 @@ import {
   StatGrid,
   Toast,
 } from "@/components/modules/ModulePrimitives";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import { formatCurrency } from "@/lib/utils";
 import {
   CalendarClock,
@@ -35,7 +35,7 @@ export default function ReportsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch(apiUrl("/api/analytics/reports"));
+      const r = await apiFetch(apiUrl("/api/analytics/reports"));
       const j = await r.json();
       if (!r.ok) throw new Error(j.error);
       setReports(j.data ?? []);
@@ -46,12 +46,12 @@ export default function ReportsPage() {
     }
   }, []);
   useEffect(() => {
-    load();
+    void Promise.resolve().then(load);
   }, [load]);
   async function download(type: string) {
     setDownloading(type);
     try {
-      const r = await fetch(apiUrl("/api/analytics/reports/export"), {
+      const r = await apiFetch(apiUrl("/api/analytics/reports/export"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type, format: "csv" }),

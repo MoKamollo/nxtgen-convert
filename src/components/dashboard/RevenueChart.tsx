@@ -7,7 +7,7 @@ import { formatCurrency } from "@/lib/utils";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 
 const CustomTooltip = ({ active, payload, label }: {
   active?: boolean;
@@ -32,13 +32,20 @@ const CustomTooltip = ({ active, payload, label }: {
 };
 
 type ViewType = "mrr" | "revenue";
+type RevenuePoint = {
+  month: string;
+  mrr: number;
+  new: number;
+  churned: number;
+  net: number;
+};
 
 export function RevenueChart({ period }: { period?: string }) {
   const [view, setView] = useState<ViewType>("mrr");
-  const [data, setData] = useState<any[]>([]);
+  const [data, setData] = useState<RevenuePoint[]>([]);
 
   useEffect(() => {
-    fetch(apiUrl("/api/analytics", { type: "overview", ...(period ? { period } : {}) }))
+    apiFetch(apiUrl("/api/analytics", { type: "overview", ...(period ? { period } : {}) }))
       .then((r) => r.json())
       .then((j) => setData(j.data?.revenue ?? []));
   }, [period]);

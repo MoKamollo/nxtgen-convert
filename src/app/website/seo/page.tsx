@@ -10,7 +10,7 @@ import {
   SearchField,
   StatGrid,
 } from "@/components/modules/ModulePrimitives";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -47,7 +47,7 @@ export default function SeoTools() {
     setLoading(true);
     setError("");
     try {
-      const r = await fetch(apiUrl("/api/website/seo"));
+      const r = await apiFetch(apiUrl("/api/website/seo"));
       const j = await r.json();
       if (!r.ok) throw new Error(j.error);
       setData(j.data);
@@ -58,7 +58,7 @@ export default function SeoTools() {
     }
   }, []);
   useEffect(() => {
-    load();
+    void Promise.resolve().then(load);
   }, [load]);
   const rows = useMemo(
     () =>

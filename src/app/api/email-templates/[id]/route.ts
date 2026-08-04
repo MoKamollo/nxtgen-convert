@@ -1,9 +1,10 @@
+import { withApiGuard } from "@/lib/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { emailTemplates } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 
-export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function PATCHHandler(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const orgId = request.headers.get("x-tenant-id");
   if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   try {
@@ -20,7 +21,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function DELETEHandler(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const orgId = request.headers.get("x-tenant-id");
   if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   try {
@@ -33,3 +34,6 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     return NextResponse.json({ error: "Failed to delete email template" }, { status: 500 });
   }
 }
+
+export const PATCH = withApiGuard(PATCHHandler);
+export const DELETE = withApiGuard(DELETEHandler);

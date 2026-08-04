@@ -1,9 +1,10 @@
+import { withApiGuard } from "@/lib/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { campaigns } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 
-export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function PATCHHandler(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const orgId = request.headers.get("x-tenant-id");
   if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   const { id } = await params;
@@ -11,13 +12,16 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const body = await request.json();
     const allowed: Record<string, unknown> = {};
     if (body.name !== undefined) allowed.name = body.name;
-    if (body.status !== undefined) allowed.status = body.status;
+    if (body.status !== undefined) {
+      const status = String(body.status);
+      if (!new Set(["draft", "paused", "cancelled"]).has(status)) {
+        return NextResponse.json({ error: "Campaign delivery states are controlled by the delivery engine" }, { status: 400 });
+      }
+      allowed.status = status;
+    }
     if (body.subject !== undefined) allowed.subject = body.subject;
     if (body.fromName !== undefined) allowed.fromName = body.fromName;
     if (body.fromEmail !== undefined) allowed.fromEmail = body.fromEmail;
-    if (body.scheduledAt !== undefined) allowed.scheduledAt = body.scheduledAt;
-    if (body.sentAt !== undefined) allowed.sentAt = body.sentAt;
-    if (body.stats !== undefined) allowed.stats = body.stats;
 
     const [updated] = await db
       .update(campaigns)
@@ -32,7 +36,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function DELETEHandler(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const orgId = request.headers.get("x-tenant-id");
   if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   const { id } = await params;
@@ -45,3 +49,6 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     return NextResponse.json({ error: "Failed to delete campaign" }, { status: 500 });
   }
 }
+
+export const PATCH = withApiGuard(PATCHHandler);
+export const DELETE = withApiGuard(DELETEHandler);

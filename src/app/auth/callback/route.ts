@@ -1,27 +1,23 @@
+import { createHmac, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { createHmac } from "crypto";
-import { db } from "@/db";
-import { organizations } from "@/db/schema";
-import { eq } from "drizzle-orm";
-import { signSession, cookieHeader } from "@/lib/session";
+import { provisionAuthenticatedSession } from "@/lib/auth-provisioning";
+import { clientIp } from "@/lib/request-security";
+import { cookieHeader, signSession } from "@/lib/session";
 
-const SECRET = process.env.SPACE_SSO_SECRET ?? "dev-secret-change-in-prod";
-
-function b64urlDecode(str: string): string {
-  return Buffer.from(str, "base64url").toString();
-}
-
-function verifySpaceToken(token: string): Record<string, string> | null {
+function verifySpaceToken(token: string): Record<string, unknown> | null {
   try {
-    const [header, body, sig] = token.split(".");
-    if (!header || !body || !sig) return null;
-    const expected = createHmac("sha256", SECRET)
-      .update(`${header}.${body}`)
-      .digest("base64url");
-    if (expected !== sig) return null;
-    const payload = JSON.parse(b64urlDecode(body));
-    if (payload.aud !== "nxtgen_convert") return null;
-    if (payload.exp < Math.floor(Date.now() / 1000)) return null;
+    const secret = process.env.SPACE_SSO_SECRET;
+    if (!secret || secret.length < 32) return null;
+    const [header, body, signature] = token.split(".");
+    if (!header || !body || !signature) return null;
+    const expected = createHmac("sha256", secret).update(`${header}.${body}`).digest();
+    const provided = Buffer.from(signature, "base64url");
+    if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) return null;
+    const parsedHeader = JSON.parse(Buffer.from(header, "base64url").toString());
+    if (parsedHeader.alg !== "HS256") return null;
+    const payload = JSON.parse(Buffer.from(body, "base64url").toString()) as Record<string, unknown>;
+    const now = Math.floor(Date.now() / 1000);
+    if (payload.aud !== "nxtgen_convert" || Number(payload.exp ?? 0) <= now || Number(payload.iat ?? now) > now + 60) return null;
     return payload;
   } catch {
     return null;
@@ -30,36 +26,25 @@ function verifySpaceToken(token: string): Record<string, string> | null {
 
 export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams.get("token");
+  if (!token) return NextResponse.redirect(new URL("/login?error=missing_token", request.url));
+  const identity = verifySpaceToken(token);
+  if (!identity) return NextResponse.redirect(new URL("/login?error=invalid_token", request.url));
 
-  if (!token) {
-    return NextResponse.redirect(new URL("/login?error=missing_token", request.url));
+  try {
+    const payload = await provisionAuthenticatedSession({
+      externalUserId: String(identity.sub ?? ""),
+      externalTenantId: String(identity.tenant_id ?? ""),
+      email: String(identity.email ?? ""),
+      name: String(identity.name ?? identity.email ?? ""),
+      role: identity.role,
+      plan: identity.plan,
+    }, { ip: clientIp(request), userAgent: request.headers.get("user-agent") ?? "unknown" });
+    const sessionToken = await signSession(payload);
+    const response = NextResponse.redirect(new URL("/dashboard", request.url));
+    response.headers.set("Set-Cookie", cookieHeader(sessionToken));
+    return response;
+  } catch (error) {
+    console.error("[space.sso]", error);
+    return NextResponse.redirect(new URL("/login?error=provisioning_failed", request.url));
   }
-
-  const payload = verifySpaceToken(token);
-  if (!payload) {
-    return NextResponse.redirect(new URL("/login?error=invalid_token", request.url));
-  }
-
-  const { sub: userId, tenant_id: tenantId, email, name, role, plan } = payload;
-
-  // Auto-create org on first SSO login
-  const existing = await db
-    .select({ id: organizations.id })
-    .from(organizations)
-    .where(eq(organizations.id, tenantId))
-    .limit(1);
-
-  if (existing.length === 0) {
-    await db.insert(organizations).values({
-      id: tenantId,
-      name: name + "'s Workspace",
-      slug: tenantId,
-      plan: "starter",
-    });
-  }
-
-  const sessionToken = await signSession({ userId, tenantId, email, name, role, plan });
-  const response = NextResponse.redirect(new URL("/dashboard", request.url));
-  response.headers.set("Set-Cookie", cookieHeader(sessionToken));
-  return response;
 }

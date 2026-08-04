@@ -16,9 +16,8 @@ import {
   StatusBadge,
   Toast,
 } from "@/components/modules/ModulePrimitives";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import {
-  CalendarClock,
   CircleDollarSign,
   PauseCircle,
   Plus,
@@ -26,6 +25,8 @@ import {
   Users,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+const CURRENT_UTC_MONTH = new Date().getUTCMonth();
+
 type Contact = {
   id: string;
   firstName: string | null;
@@ -82,9 +83,9 @@ export default function Subscriptions() {
     setError("");
     try {
       const [r, c, p] = await Promise.all([
-        fetch(apiUrl("/api/subscriptions")),
-        fetch(apiUrl("/api/contacts", { limit: "200" })),
-        fetch(apiUrl("/api/products")),
+        apiFetch(apiUrl("/api/subscriptions")),
+        apiFetch(apiUrl("/api/contacts", { limit: "200" })),
+        apiFetch(apiUrl("/api/products")),
       ]);
       const [j, cj, pj] = await Promise.all([r.json(), c.json(), p.json()]);
       if (!r.ok) throw new Error(j.error);
@@ -98,7 +99,7 @@ export default function Subscriptions() {
     }
   }, []);
   useEffect(() => {
-    load();
+    void Promise.resolve().then(load);
   }, [load]);
   const rows = useMemo(
     () =>
@@ -122,12 +123,12 @@ export default function Subscriptions() {
   const churned = data.filter(
     (s) =>
       s.status === "cancelled" &&
-      new Date(s.createdAt).getUTCMonth() === new Date().getUTCMonth(),
+      new Date(s.createdAt).getUTCMonth() === CURRENT_UTC_MONTH,
   ).length;
   const save = async () => {
     setSaving(true);
     try {
-      const r = await fetch(apiUrl("/api/subscriptions"), {
+      const r = await apiFetch(apiUrl("/api/subscriptions"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -153,7 +154,7 @@ export default function Subscriptions() {
     }
   };
   const patch = async (id: string, status: string) => {
-    const r = await fetch(apiUrl(`/api/subscriptions/${id}`), {
+    const r = await apiFetch(apiUrl(`/api/subscriptions/${id}`), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
@@ -167,7 +168,7 @@ export default function Subscriptions() {
     await load();
   };
   const del = async (id: string) => {
-    const r = await fetch(apiUrl(`/api/subscriptions/${id}`), {
+    const r = await apiFetch(apiUrl(`/api/subscriptions/${id}`), {
       method: "DELETE",
     });
     const j = await r.json();

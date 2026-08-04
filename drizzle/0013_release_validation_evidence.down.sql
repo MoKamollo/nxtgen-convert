@@ -1,0 +1,4 @@
+DROP POLICY IF EXISTS release_validation_events_tenant_isolation ON release_validation_events;
+DROP TRIGGER IF EXISTS release_validation_events_immutable ON release_validation_events;
+DROP FUNCTION IF EXISTS nxtgen_release_validation_events_immutable();
+DROP TABLE IF EXISTS release_validation_events;

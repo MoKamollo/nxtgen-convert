@@ -1,9 +1,10 @@
+import { withApiGuard } from "@/lib/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { campaigns } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   const orgId = request.headers.get("x-tenant-id");
   if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   try {
@@ -14,18 +15,22 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+async function POSTHandler(request: NextRequest) {
   const orgId = request.headers.get("x-tenant-id");
   if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   try {
     const body = await request.json();
+    const type = String(body.type ?? "email");
+    if (type !== "email") {
+      return NextResponse.json({ error: "Only the verified email delivery channel is currently operational" }, { status: 409 });
+    }
 
     const [campaign] = await db
       .insert(campaigns)
       .values({
         organizationId: orgId,
         name: body.name,
-        type: body.type || "email",
+        type: "email",
         status: "draft",
         subject: body.subject,
         fromName: body.fromName,
@@ -38,6 +43,7 @@ export async function POST(request: NextRequest) {
           opened: 0,
           clicked: 0,
           bounced: 0,
+          failed: 0,
           unsubscribed: 0,
           revenue: 0,
         },
@@ -52,3 +58,6 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+export const GET = withApiGuard(GETHandler);
+export const POST = withApiGuard(POSTHandler);

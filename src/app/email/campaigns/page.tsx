@@ -1,11 +1,10 @@
 "use client";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ConfirmAction, Toast } from "@/components/modules/ModulePrimitives";
-import { Card } from "@/components/ui/Card";
-import { Badge, StatusBadge } from "@/components/ui/Badge";
+import { StatusBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { formatNumber, formatPercent, timeAgo, cn } from "@/lib/utils";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import {
   Plus,
   Search,
@@ -15,18 +14,16 @@ import {
   Clock,
   MousePointerClick,
   Eye,
-  DollarSign,
   Users,
   Zap,
   MessageSquare,
   ChevronRight,
-  Play,
-  Trash2,
   MoreHorizontal,
   X,
   Loader2,
 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 
 type Campaign = {
   id: string; name: string; type: string; status: string; subject: string | null;
@@ -42,6 +39,7 @@ const campaignTypeIcons = {
 };
 
 export default function CampaignsPage() {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState("All");
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
@@ -53,18 +51,18 @@ export default function CampaignsPage() {
   const [actionError, setActionError] = useState("");
 
   const load = useCallback(() => {
-    fetch(apiUrl("/api/campaigns"))
+    apiFetch(apiUrl("/api/campaigns"))
       .then((r) => r.json())
       .then((j) => setAllCampaigns(j.data ?? []));
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { void Promise.resolve().then(load); }, [load]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) return;
     setSaving(true);
-    await fetch(apiUrl("/api/campaigns"), {
+    await apiFetch(apiUrl("/api/campaigns"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -83,7 +81,7 @@ export default function CampaignsPage() {
 
   const handleLaunch = async (campaignId: string) => {
     setLaunching(campaignId);
-    const res = await fetch(apiUrl(`/api/campaigns/${campaignId}/send`), { method: "POST" });
+    const res = await apiFetch(apiUrl(`/api/campaigns/${campaignId}/send`), { method: "POST" });
     const j = await res.json();
     setLaunching(null);
     if (res.ok) {
@@ -94,7 +92,7 @@ export default function CampaignsPage() {
   };
 
   const handleDelete = async (id: string) => {
-    await fetch(apiUrl(`/api/campaigns/${id}`), { method: "DELETE" });
+    await apiFetch(apiUrl(`/api/campaigns/${id}`), { method: "DELETE" });
     setAllCampaigns(prev => prev.filter(c => c.id !== id));
     setActiveMenu(null);
   };
@@ -138,7 +136,7 @@ export default function CampaignsPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" icon={BarChart3}>
+            <Button variant="outline" size="sm" icon={BarChart3} onClick={() => router.push("/email/analytics")}>
               Analytics
             </Button>
             <Button variant="gradient" size="sm" icon={Plus} onClick={() => setShowModal(true)}>
@@ -157,14 +155,13 @@ export default function CampaignsPage() {
           const avgClick = sentCampaigns.length > 0
             ? sentCampaigns.reduce((s, c) => s + (c.stats.opened > 0 ? (c.stats.clicked / c.stats.opened) * 100 : 0), 0) / sentCampaigns.length
             : 0;
-          const revenue = allCampaigns.reduce((s, c) => s + (c.stats?.revenue ?? 0), 0);
           return (
             <div className="grid grid-cols-4 gap-4">
               {[
                 { label: "Emails Sent", value: formatNumber(sent), icon: Send, color: "text-brand-400", bg: "bg-brand-500/10" },
                 { label: "Avg Open Rate", value: sent > 0 ? formatPercent(avgOpen) : "—", icon: Eye, color: "text-emerald-400", bg: "bg-emerald-500/10" },
                 { label: "Avg Click Rate", value: sent > 0 ? formatPercent(avgClick) : "—", icon: MousePointerClick, color: "text-violet-400", bg: "bg-violet-500/10" },
-                { label: "Revenue Attributed", value: revenue > 0 ? `$${(revenue / 1000).toFixed(1)}K` : "—", icon: DollarSign, color: "text-amber-400", bg: "bg-amber-500/10" },
+                { label: "Confirmed Delivered", value: formatNumber(allCampaigns.reduce((sum, campaign) => sum + (campaign.stats?.delivered ?? 0), 0)), icon: Mail, color: "text-amber-400", bg: "bg-amber-500/10" },
               ].map((stat) => {
                 const Icon = stat.icon;
                 return (
@@ -287,9 +284,9 @@ export default function CampaignsPage() {
                       </div>
                       <div className="text-center">
                         <p className="text-xs font-bold text-amber-400">
-                          ${formatNumber(campaign.stats.revenue)}
+                          {formatNumber(campaign.stats.delivered)}
                         </p>
-                        <p className="text-[10px] text-surface-600 mt-0.5">Revenue</p>
+                        <p className="text-[10px] text-surface-600 mt-0.5">Delivered</p>
                       </div>
                     </div>
                   ) : (
@@ -343,7 +340,7 @@ export default function CampaignsPage() {
                     <div className="h-1 rounded-full bg-surface-800">
                       <div
                         className="h-full rounded-full bg-brand-500 animate-pulse"
-                        style={{ width: `${campaign.audienceSize ? (campaign.stats.delivered / campaign.audienceSize) * 100 : 98}%` }}
+                        style={{ width: `${campaign.audienceSize ? Math.min(100, (campaign.stats.delivered / campaign.audienceSize) * 100) : 0}%` }}
                       />
                     </div>
                   </div>
@@ -355,39 +352,6 @@ export default function CampaignsPage() {
 
         )}
 
-        {/* Templates Section */}
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-surface-200">Quick Templates</h2>
-            <Button variant="ghost" size="sm">View all templates</Button>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {[
-              { name: "Welcome Series", desc: "5-email onboarding sequence", tags: ["Onboarding"] },
-              { name: "Product Announcement", desc: "Launch your next big feature", tags: ["Product"] },
-              { name: "Win-back Campaign", desc: "Re-engage inactive subscribers", tags: ["Retention"] },
-              { name: "Monthly Newsletter", desc: "Keep your audience informed", tags: ["Newsletter"] },
-            ].map((template) => (
-              <div
-                key={template.name}
-                className="rounded-xl border border-dashed border-surface-700 p-4 cursor-pointer hover:border-brand-500/40 hover:bg-brand-500/5 transition-all group"
-              >
-                <div className="h-20 rounded-lg bg-surface-800 mb-3 flex items-center justify-center group-hover:bg-surface-700 transition-colors">
-                  <Mail size={24} className="text-surface-600 group-hover:text-brand-400 transition-colors" />
-                </div>
-                <p className="text-xs font-semibold text-surface-200">{template.name}</p>
-                <p className="text-[11px] text-surface-500 mt-0.5">{template.desc}</p>
-                <div className="flex items-center gap-1 mt-2">
-                  {template.tags.map((tag) => (
-                    <span key={tag} className="text-[10px] bg-surface-800 text-surface-400 rounded px-1.5 py-0.5">
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
@@ -403,20 +367,9 @@ export default function CampaignsPage() {
                   placeholder="e.g. Summer Launch 2026"
                   className="w-full h-9 rounded-lg border border-surface-700 bg-surface-800 px-3 text-sm text-surface-100 placeholder:text-surface-600 focus:outline-none focus:border-brand-500" />
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-surface-400 mb-1.5">Type</label>
-                <div className="flex gap-2">
-                  {[
-                    { value: "email", label: "Email", icon: Mail },
-                    { value: "sms", label: "SMS", icon: MessageSquare },
-                    { value: "push", label: "Push", icon: Zap },
-                  ].map(({ value, label, icon: Icon }) => (
-                    <button key={value} type="button" onClick={() => setForm(p => ({ ...p, type: value }))}
-                      className={`flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold border transition-all ${form.type === value ? "border-brand-500 bg-brand-500/20 text-brand-300" : "border-surface-700 text-surface-400 hover:border-surface-600"}`}>
-                      <Icon size={12} />{label}
-                    </button>
-                  ))}
-                </div>
+              <div className="rounded-lg border border-surface-800 bg-surface-950/40 p-3">
+                <div className="flex items-center gap-2"><Mail size={13} className="text-brand-400" /><span className="text-xs font-semibold text-surface-200">Email channel</span></div>
+                <p className="mt-1 text-[10px] text-surface-500">SMS and push delivery remain unavailable until verified provider connectors are configured.</p>
               </div>
               {form.type === "email" && (
                 <>
@@ -455,6 +408,7 @@ export default function CampaignsPage() {
           </div>
         </div>
       )}
+      {actionError && <Toast message={actionError} type="error" />}
     </AppLayout>
   );
 }

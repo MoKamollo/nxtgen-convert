@@ -1,15 +1,16 @@
 "use client";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/Button";
-import { formatNumber, formatCurrency } from "@/lib/utils";
-import { apiUrl } from "@/lib/org";
+import { formatNumber } from "@/lib/utils";
+import { apiFetch, apiUrl } from "@/lib/org";
 import { Plus, Megaphone, TrendingUp, BarChart3, Mail, MessageSquare, Zap, Loader2 } from "lucide-react";
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 type Campaign = {
   id: string; name: string; type: string; status: string;
   subject: string | null; scheduledAt: string | null; sentAt: string | null;
-  stats: { sent: number; delivered: number; opened: number; clicked: number; revenue: number };
+  stats: { sent: number; delivered: number; opened: number; clicked: number; bounced: number; failed: number; unsubscribed: number };
 };
 
 const TYPE_ICONS: Record<string, typeof Mail> = {
@@ -26,11 +27,12 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function MarketingCampaignsPage() {
+  const router = useRouter();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(apiUrl("/api/campaigns"))
+    apiFetch(apiUrl("/api/campaigns"))
       .then(r => r.json())
       .then(j => { setCampaigns(j.data ?? []); setLoading(false); })
       .catch(() => setLoading(false));
@@ -38,7 +40,7 @@ export default function MarketingCampaignsPage() {
 
   const active    = campaigns.filter(c => c.status === "sending" || c.status === "sent").length;
   const totalSent = campaigns.reduce((s, c) => s + (c.stats?.sent ?? 0), 0);
-  const revenue   = campaigns.reduce((s, c) => s + (c.stats?.revenue ?? 0), 0);
+  const delivered = campaigns.reduce((sum, campaign) => sum + (campaign.stats?.delivered ?? 0), 0);
 
   return (
     <AppLayout>
@@ -51,8 +53,8 @@ export default function MarketingCampaignsPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" icon={BarChart3}>Attribution</Button>
-            <Button variant="gradient" size="sm" icon={Plus}>New Campaign</Button>
+            <Button variant="outline" size="sm" icon={BarChart3} onClick={() => router.push("/analytics/campaigns")}>Campaign Analytics</Button>
+            <Button variant="gradient" size="sm" icon={Plus} onClick={() => router.push("/email/campaigns")}>New Email Campaign</Button>
           </div>
         </div>
 
@@ -61,7 +63,7 @@ export default function MarketingCampaignsPage() {
           {[
             { label: "Active Campaigns",    value: active,                          icon: Megaphone,  color: "text-brand-400" },
             { label: "Total Emails Sent",   value: formatNumber(totalSent),         icon: TrendingUp, color: "text-emerald-400" },
-            { label: "Revenue Attributed",  value: revenue > 0 ? formatCurrency(revenue) : "—", icon: TrendingUp, color: "text-amber-400" },
+            { label: "Confirmed Delivered", value: formatNumber(delivered), icon: TrendingUp, color: "text-amber-400" },
             { label: "Total Campaigns",     value: campaigns.length,                icon: BarChart3,  color: "text-violet-400" },
           ].map(stat => {
             const Icon = stat.icon;
@@ -84,7 +86,7 @@ export default function MarketingCampaignsPage() {
             <Megaphone size={32} className="text-surface-600" />
             <p className="text-sm font-semibold text-surface-300">No campaigns yet</p>
             <p className="text-xs text-surface-500">Create your first campaign to start reaching your audience</p>
-            <Button variant="outline" size="sm" icon={Plus}>New Campaign</Button>
+            <Button variant="outline" size="sm" icon={Plus} onClick={() => router.push("/email/campaigns")}>New Email Campaign</Button>
           </div>
         ) : (
           <div className="space-y-3">
@@ -125,8 +127,8 @@ export default function MarketingCampaignsPage() {
                           <p className="text-[10px] text-surface-600">Open Rate</p>
                         </div>
                         <div className="text-center">
-                          <p className="text-xs font-bold text-amber-400">{campaign.stats.revenue > 0 ? formatCurrency(campaign.stats.revenue) : "—"}</p>
-                          <p className="text-[10px] text-surface-600">Revenue</p>
+                          <p className="text-xs font-bold text-amber-400">{formatNumber(campaign.stats.delivered)}</p>
+                          <p className="text-[10px] text-surface-600">Delivered</p>
                         </div>
                       </div>
                     )}

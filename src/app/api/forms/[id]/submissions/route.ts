@@ -1,9 +1,10 @@
+import { withApiGuard } from "@/lib/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { contacts, marketingForms } from "@/db/schema";
 import { and, desc, eq, sql } from "drizzle-orm";
 
-export async function GET(
+async function GETHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -43,3 +44,5 @@ export async function GET(
     return NextResponse.json({ error: "Failed to fetch submissions" }, { status: 500 });
   }
 }
+
+export const GET = withApiGuard(GETHandler);

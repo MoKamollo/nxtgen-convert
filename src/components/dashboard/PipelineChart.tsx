@@ -4,13 +4,17 @@ import {
   ResponsiveContainer, Cell, PieChart, Pie,
 } from "recharts";
 import { useEffect, useState } from "react";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 
+type PipelineStage = { stage: string; count: number; value: number; color: string };
+type LeadSource = { name: string; value: number; color: string };
+type FunnelStage = { stage: string; count: number };
+
 const PipelineTooltip = ({ active, payload }: {
   active?: boolean;
-  payload?: Array<{ payload: { stage: string; count: number; value: number; color: string } }>;
+  payload?: Array<{ payload: PipelineStage }>;
 }) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
@@ -34,15 +38,15 @@ const PipelineTooltip = ({ active, payload }: {
 };
 
 export function PipelineChart() {
-  const [pipelineData, setPipelineData] = useState<any[]>([]);
+  const [pipelineData, setPipelineData] = useState<PipelineStage[]>([]);
 
   useEffect(() => {
-    fetch(apiUrl("/api/analytics", { type: "overview" }))
+    apiFetch(apiUrl("/api/analytics", { type: "overview" }))
       .then((r) => r.json())
       .then((j) => setPipelineData(j.data?.pipeline ?? []));
   }, []);
 
-  const total = pipelineData.reduce((s: number, d: any) => s + d.value, 0);
+  const total = pipelineData.reduce((sum, stage) => sum + stage.value, 0);
 
   return (
     <Card>
@@ -77,7 +81,7 @@ export function PipelineChart() {
             />
             <Tooltip content={<PipelineTooltip />} />
             <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-              {pipelineData.map((entry: any, i: number) => (
+              {pipelineData.map((entry, i) => (
                 <Cell key={i} fill={entry.color} fillOpacity={0.85} />
               ))}
             </Bar>
@@ -108,10 +112,10 @@ const ChannelTooltip = ({ active, payload }: {
 };
 
 export function TrafficSourcesChart() {
-  const [data, setData] = useState<{ name: string; value: number; color: string }[]>([]);
+  const [data, setData] = useState<LeadSource[]>([]);
 
   useEffect(() => {
-    fetch(apiUrl("/api/analytics", { type: "overview" }))
+    apiFetch(apiUrl("/api/analytics", { type: "overview" }))
       .then(r => r.json())
       .then(j => setData(j.data?.contactSources ?? []));
   }, []);
@@ -154,10 +158,10 @@ export function TrafficSourcesChart() {
 }
 
 export function ConversionFunnelChart() {
-  const [funnel, setFunnel] = useState<{ stage: string; count: number }[]>([]);
+  const [funnel, setFunnel] = useState<FunnelStage[]>([]);
 
   useEffect(() => {
-    fetch(apiUrl("/api/analytics", { type: "overview" }))
+    apiFetch(apiUrl("/api/analytics", { type: "overview" }))
       .then(r => r.json())
       .then(j => setFunnel(j.data?.conversionFunnel ?? []));
   }, []);

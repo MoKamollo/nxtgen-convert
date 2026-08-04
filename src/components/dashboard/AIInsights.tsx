@@ -3,23 +3,23 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
-import { Bot, TrendingUp, AlertTriangle, Zap, ArrowUpRight, Sparkles, X } from "lucide-react";
+import { TrendingUp, AlertTriangle, Zap, ArrowUpRight, ListChecks, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { apiUrl } from "@/lib/org";
+import { apiFetch, apiUrl } from "@/lib/org";
 
 type Insight = {
   id: string; type: "opportunity" | "churn" | "expansion" | "campaign";
   title: string; body: string; priority: string;
-  contact?: string; impact?: string; action: string;
+  contact?: string; impact?: string; action: string; contactIds?: string[];
 };
 
 const typeConfig = {
-  opportunity: { icon: TrendingUp,    color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/20", badge: "success"  as const, label: "Opportunity" },
-  churn:       { icon: AlertTriangle, color: "text-red-400",     bg: "bg-red-500/10",     border: "border-red-500/20",     badge: "danger"   as const, label: "Churn Risk" },
-  expansion:   { icon: ArrowUpRight,  color: "text-brand-400",   bg: "bg-brand-500/10",   border: "border-brand-500/20",   badge: "info"     as const, label: "Expansion" },
-  campaign:    { icon: Zap,           color: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/20",   badge: "warning"  as const, label: "Campaign" },
+  opportunity: { icon: TrendingUp,    color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/20", badge: "success"  as const, label: "Lead Follow-up" },
+  churn:       { icon: AlertTriangle, color: "text-red-400",     bg: "bg-red-500/10",     border: "border-red-500/20",     badge: "danger"   as const, label: "Recent Churn" },
+  expansion:   { icon: ArrowUpRight,  color: "text-brand-400",   bg: "bg-brand-500/10",   border: "border-brand-500/20",   badge: "info"     as const, label: "Expansion Candidate" },
+  campaign:    { icon: Zap,           color: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/20",   badge: "warning"  as const, label: "Follow-up" },
 };
 
 const INSIGHT_ROUTES: Record<string, string> = {
@@ -35,7 +35,7 @@ export function AIInsightsPanel() {
   const [dismissed, setDismissed] = useState<string[]>([]);
 
   useEffect(() => {
-    fetch(apiUrl("/api/ai-insights")).then(r => r.json())
+    apiFetch(apiUrl("/api/ai-insights")).then(r => r.json())
       .then(j => setInsights(j.data ?? []))
       .catch(() => setInsights([]));
   }, []);
@@ -47,21 +47,21 @@ export function AIInsightsPanel() {
       <CardHeader>
         <div className="flex items-center gap-2">
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-500/15">
-            <Sparkles size={14} className="text-brand-400" />
+            <ListChecks size={14} className="text-brand-400" />
           </div>
-          <CardTitle>AI Intelligence</CardTitle>
+          <CardTitle>Operational Signals</CardTitle>
           {visible.length > 0 && <Badge variant="purple" size="sm">{visible.length} active</Badge>}
         </div>
-        <Button variant="ghost" size="sm">View all insights</Button>
+        <Button variant="ghost" size="sm" onClick={() => router.push("/ai/insights")}>View all signals</Button>
       </CardHeader>
 
       {visible.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-8 text-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/10 mb-3">
-            <Sparkles size={20} className="text-emerald-400" />
+            <ListChecks size={20} className="text-emerald-400" />
           </div>
-          <p className="text-sm font-semibold text-surface-200">All clear</p>
-          <p className="text-xs text-surface-500 mt-1">AI insights will appear here as your CRM data grows</p>
+          <p className="text-sm font-semibold text-surface-200">No active signals</p>
+          <p className="text-xs text-surface-500 mt-1">Rule-based signals will appear when current records meet documented conditions</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -94,7 +94,7 @@ export function AIInsightsPanel() {
                   onClick={() => router.push(INSIGHT_ROUTES[insight.type] ?? "/crm/contacts")}
                   className={cn("w-full flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-semibold transition-all", config.bg, config.color, "hover:opacity-80")}
                 >
-                  <Bot size={12} />{insight.action}
+                  <ListChecks size={12} />{insight.action}
                 </button>
               </div>
             );

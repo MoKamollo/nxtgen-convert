@@ -1,10 +1,11 @@
+import { withApiGuard } from "@/lib/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { Resend } from "resend";
 
-export async function POST(request: NextRequest) {
+async function POSTHandler(request: NextRequest) {
   const orgId = request.headers.get("x-tenant-id");
   const userId = request.headers.get("x-user-id");
   if (!orgId || !userId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
@@ -15,7 +16,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const resend = new Resend(process.env.RESEND_API_KEY);
     const result = await resend.emails.send({
-      from: process.env.EMAIL_FROM ?? "NxtGen Convergence <noreply@nxtgen-stack.com>",
+      from: process.env.EMAIL_FROM ?? "NxtGen Convert <noreply@nxtgen-stack.com>",
       to: user.email,
       subject: `[Test] ${String(body.subject ?? "Broadcast")}`,
       html: String(body.content ?? "<p>Test broadcast</p>").replace(/\{\{first_name\}\}/gi, user.name.split(" ")[0]),
@@ -26,3 +27,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Failed to send test email" }, { status: 500 });
   }
 }
+
+export const POST = withApiGuard(POSTHandler);

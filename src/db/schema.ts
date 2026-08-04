@@ -116,6 +116,7 @@ export const organizations = pgTable("organizations", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
   slug: text("slug").notNull().unique(),
+  spaceTenantId: text("space_tenant_id").unique(),
   logo: text("logo"),
   website: text("website"),
   industry: text("industry"),
@@ -128,8 +129,9 @@ export const organizations = pgTable("organizations", {
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
-  organizationId: uuid("organization_id").references(() => organizations.id),
-  email: text("email").notNull().unique(),
+  organizationId: uuid("organization_id").references(() => organizations.id), // legacy primary workspace; memberships are canonical
+  spaceUserId: text("space_user_id").unique(),
+  email: text("email").notNull(),
   name: text("name").notNull(),
   avatar: text("avatar"),
   role: userRoleEnum("role").default("member"),
@@ -138,6 +140,7 @@ export const users = pgTable("users", {
   timezone: text("timezone").default("America/New_York"),
   preferences: jsonb("preferences").default({}),
   lastActiveAt: timestamp("last_active_at"),
+  authVersion: integer("auth_version").default(1).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -171,6 +174,9 @@ export const contacts = pgTable(
     ownerId: uuid("owner_id").references(() => users.id),
     customFields: jsonb("custom_fields").default({}),
     lastContactedAt: timestamp("last_contacted_at"),
+    archivedAt: timestamp("archived_at"),
+    archivedByUserId: uuid("archived_by_user_id").references(() => users.id),
+    deletionReason: text("deletion_reason"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -367,6 +373,34 @@ export const workflows = pgTable("workflows", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+export const workflowVersions = pgTable("workflow_versions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  workflowId: uuid("workflow_id").references(() => workflows.id).notNull(),
+  version: integer("version").notNull(),
+  definition: jsonb("definition").notNull(),
+  checksum: text("checksum").notNull(),
+  status: text("status").default("draft").notNull(),
+  createdById: uuid("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  publishedAt: timestamp("published_at"),
+}, (table) => [
+  uniqueIndex("workflow_versions_workflow_version_uidx").on(table.organizationId, table.workflowId, table.version),
+  uniqueIndex("workflow_versions_workflow_checksum_uidx").on(table.organizationId, table.workflowId, table.checksum),
+  index("workflow_versions_org_status_idx").on(table.organizationId, table.status, table.createdAt),
+]);
+
+export const workflowActiveVersions = pgTable("workflow_active_versions", {
+  workflowId: uuid("workflow_id").primaryKey().references(() => workflows.id),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  versionId: uuid("version_id").references(() => workflowVersions.id).notNull(),
+  activatedById: uuid("activated_by_id").references(() => users.id),
+  activatedAt: timestamp("activated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("workflow_active_versions_org_workflow_uidx").on(table.organizationId, table.workflowId),
+  index("workflow_active_versions_version_idx").on(table.versionId),
+]);
 
 // ─── Support / Tickets ────────────────────────────────────────────────────────
 
@@ -661,13 +695,839 @@ export const workflowEnrollments = pgTable("workflow_enrollments", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
   workflowId: uuid("workflow_id").references(() => workflows.id).notNull(),
+  workflowVersionId: uuid("workflow_version_id").references(() => workflowVersions.id),
   contactId: uuid("contact_id").references(() => contacts.id),
   dealId: uuid("deal_id").references(() => deals.id),
+  event: text("event").default("manual").notNull(),
+  context: jsonb("context").default({}),
+  idempotencyKey: text("idempotency_key"),
   nextStepIndex: integer("next_step_index").notNull().default(0),
   resumeAt: timestamp("resume_at").notNull(),
   status: text("status").notNull().default("pending"),
+  attemptCount: integer("attempt_count").default(0).notNull(),
+  maxAttempts: integer("max_attempts").default(5).notNull(),
+  lastError: text("last_error"),
+  lockedAt: timestamp("locked_at"),
+  lockToken: text("lock_token"),
+  completedAt: timestamp("completed_at"),
+  exitType: text("exit_type"),
+  exitReason: text("exit_reason"),
+  exitedAt: timestamp("exited_at"),
+  goalReachedAt: timestamp("goal_reached_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("workflow_enrollments_idempotency_uidx").on(table.organizationId, table.workflowId, table.idempotencyKey),
+  index("workflow_enrollments_due_idx").on(table.status, table.resumeAt),
+]);
+
+export const workflowStepExecutions = pgTable("workflow_step_executions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  enrollmentId: uuid("enrollment_id").references(() => workflowEnrollments.id).notNull(),
+  workflowId: uuid("workflow_id").references(() => workflows.id).notNull(),
+  stepIndex: integer("step_index").notNull(),
+  stepType: text("step_type").notNull(),
+  status: text("status").default("processing").notNull(),
+  attemptCount: integer("attempt_count").default(1).notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  providerMessageId: text("provider_message_id"),
+  result: jsonb("result").default({}),
+  lastError: text("last_error"),
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("workflow_step_executions_enrollment_step_uidx").on(table.enrollmentId, table.stepIndex),
+  uniqueIndex("workflow_step_executions_idempotency_uidx").on(table.idempotencyKey),
+  index("workflow_step_executions_org_time_idx").on(table.organizationId, table.startedAt),
+]);
+
+
+export const workflowGoalEvents = pgTable("workflow_goal_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  workflowId: uuid("workflow_id").references(() => workflows.id).notNull(),
+  workflowVersionId: uuid("workflow_version_id").references(() => workflowVersions.id),
+  enrollmentId: uuid("enrollment_id").references(() => workflowEnrollments.id).notNull(),
+  contactId: uuid("contact_id").references(() => contacts.id),
+  dealId: uuid("deal_id").references(() => deals.id),
+  goalKey: text("goal_key").notNull(),
+  goalName: text("goal_name").notNull(),
+  metadata: jsonb("metadata").default({}).notNull(),
+  reachedAt: timestamp("reached_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("workflow_goal_events_enrollment_goal_uidx").on(table.organizationId, table.enrollmentId, table.goalKey),
+  uniqueIndex("workflow_goal_events_org_id_uidx").on(table.organizationId, table.id),
+  index("workflow_goal_events_workflow_time_idx").on(table.organizationId, table.workflowId, table.reachedAt),
+]);
+
+export const workflowExperimentAssignments = pgTable("workflow_experiment_assignments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  workflowId: uuid("workflow_id").references(() => workflows.id).notNull(),
+  workflowVersionId: uuid("workflow_version_id").references(() => workflowVersions.id),
+  enrollmentId: uuid("enrollment_id").references(() => workflowEnrollments.id).notNull(),
+  stepIndex: integer("step_index").notNull(),
+  experimentKey: text("experiment_key").notNull(),
+  variantId: text("variant_id").notNull(),
+  variantName: text("variant_name").notNull(),
+  targetIndex: integer("target_index").notNull(),
+  metadata: jsonb("metadata").default({}).notNull(),
+  assignedAt: timestamp("assigned_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("workflow_experiment_assignments_enrollment_step_uidx").on(table.organizationId, table.enrollmentId, table.stepIndex),
+  uniqueIndex("workflow_experiment_assignments_org_id_uidx").on(table.organizationId, table.id),
+  index("workflow_experiment_assignments_workflow_idx").on(table.organizationId, table.workflowId, table.experimentKey, table.variantId),
+]);
+
+
+// ─── Production Foundation ───────────────────────────────────────────────────
+
+export const organizationMemberships = pgTable("organization_memberships", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  userId: uuid("user_id").references(() => users.id).notNull(),
+  role: userRoleEnum("role").default("member").notNull(),
+  status: text("status").default("active").notNull(),
+  version: integer("version").default(1).notNull(),
+  joinedAt: timestamp("joined_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("organization_memberships_org_user_uidx").on(table.organizationId, table.userId),
+  index("organization_memberships_user_idx").on(table.userId),
+  index("organization_memberships_org_status_idx").on(table.organizationId, table.status),
+]);
+
+export const organizationInvitations = pgTable("organization_invitations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  email: text("email").notNull(),
+  name: text("name"),
+  role: userRoleEnum("role").default("member").notNull(),
+  tokenHash: text("token_hash").notNull().unique(),
+  invitedByUserId: uuid("invited_by_user_id").references(() => users.id),
+  status: text("status").default("pending").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  acceptedAt: timestamp("accepted_at"),
+  revokedAt: timestamp("revoked_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("organization_invitations_org_email_idx").on(table.organizationId, table.email),
+  index("organization_invitations_status_expiry_idx").on(table.status, table.expiresAt),
+]);
+
+export const authSessions = pgTable("auth_sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  userId: uuid("user_id").references(() => users.id).notNull(),
+  membershipId: uuid("membership_id").references(() => organizationMemberships.id).notNull(),
+  membershipVersion: integer("membership_version").notNull(),
+  userAuthVersion: integer("user_auth_version").notNull(),
+  ipHash: text("ip_hash"),
+  userAgentHash: text("user_agent_hash"),
+  expiresAt: timestamp("expires_at").notNull(),
+  revokedAt: timestamp("revoked_at"),
+  lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("auth_sessions_user_idx").on(table.userId),
+  index("auth_sessions_org_idx").on(table.organizationId),
+  index("auth_sessions_expiry_idx").on(table.expiresAt),
+]);
+
+export const auditEvents = pgTable("audit_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id),
+  actorUserId: uuid("actor_user_id").references(() => users.id),
+  actorType: text("actor_type").default("user").notNull(),
+  action: text("action").notNull(),
+  targetType: text("target_type"),
+  targetId: text("target_id"),
+  result: text("result").default("success").notNull(),
+  requestId: text("request_id"),
+  ipHash: text("ip_hash"),
+  userAgentHash: text("user_agent_hash"),
+  metadata: jsonb("metadata").default({}),
+  occurredAt: timestamp("occurred_at").defaultNow().notNull(),
+}, (table) => [
+  index("audit_events_org_time_idx").on(table.organizationId, table.occurredAt),
+  index("audit_events_actor_time_idx").on(table.actorUserId, table.occurredAt),
+  index("audit_events_action_idx").on(table.action),
+]);
+
+export const integrationSecrets = pgTable("integration_secrets", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  provider: text("provider").notNull(),
+  ciphertext: text("ciphertext").notNull(),
+  iv: text("iv").notNull(),
+  authTag: text("auth_tag").notNull(),
+  keyVersion: integer("key_version").default(1).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  rotatedAt: timestamp("rotated_at"),
+}, (table) => [index("integration_secrets_org_provider_idx").on(table.organizationId, table.provider)]);
+
+export const connectorAccounts = pgTable("connector_accounts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  provider: text("provider").notNull(),
+  externalAccountId: text("external_account_id"),
+  displayName: text("display_name"),
+  status: text("status").default("disconnected").notNull(),
+  healthStatus: text("health_status").default("unknown").notNull(),
+  scopes: text("scopes").array().default([]).notNull(),
+  secretId: uuid("secret_id").references(() => integrationSecrets.id),
+  lastVerifiedAt: timestamp("last_verified_at"),
+  lastSyncAt: timestamp("last_sync_at"),
+  lastError: text("last_error"),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("connector_accounts_org_provider_uidx").on(table.organizationId, table.provider),
+  index("connector_accounts_health_idx").on(table.healthStatus),
+]);
+
+export const apiKeys = pgTable("api_keys", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id),
+  name: text("name").notNull(),
+  prefix: text("prefix").notNull(),
+  keyHash: text("key_hash").notNull().unique(),
+  scopes: text("scopes").array().default([]).notNull(),
+  lastUsedAt: timestamp("last_used_at"),
+  expiresAt: timestamp("expires_at"),
+  revokedAt: timestamp("revoked_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [index("api_keys_org_idx").on(table.organizationId)]);
+
+export const webhookEndpoints = pgTable("webhook_endpoints", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  url: text("url").notNull(),
+  events: text("events").array().default([]).notNull(),
+  secretId: uuid("secret_id").references(() => integrationSecrets.id).notNull(),
+  active: boolean("active").default(true).notNull(),
+  healthStatus: text("health_status").default("pending").notNull(),
+  consecutiveFailures: integer("consecutive_failures").default(0).notNull(),
+  lastDeliveryAt: timestamp("last_delivery_at"),
+  lastSuccessAt: timestamp("last_success_at"),
+  lastFailureAt: timestamp("last_failure_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [index("webhook_endpoints_org_idx").on(table.organizationId)]);
+
+export const webhookDeliveries = pgTable("webhook_deliveries", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  endpointId: uuid("endpoint_id").references(() => webhookEndpoints.id).notNull(),
+  eventId: uuid("event_id").notNull(),
+  eventType: text("event_type").notNull(),
+  payload: jsonb("payload").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  status: text("status").default("pending").notNull(),
+  attemptCount: integer("attempt_count").default(0).notNull(),
+  nextAttemptAt: timestamp("next_attempt_at").defaultNow().notNull(),
+  responseStatus: integer("response_status"),
+  responseBody: text("response_body"),
+  lastError: text("last_error"),
+  deliveredAt: timestamp("delivered_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("webhook_deliveries_endpoint_event_uidx").on(table.endpointId, table.eventId),
+  index("webhook_deliveries_due_idx").on(table.status, table.nextAttemptAt),
+]);
+
+export const integrationEventReceipts = pgTable("integration_event_receipts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  provider: text("provider").notNull(),
+  externalEventId: text("external_event_id").notNull(),
+  eventType: text("event_type").notNull(),
+  status: text("status").default("received").notNull(),
+  error: text("error"),
+  receivedAt: timestamp("received_at").defaultNow().notNull(),
+  processedAt: timestamp("processed_at"),
+}, (table) => [
+  uniqueIndex("integration_event_receipts_provider_event_uidx").on(table.organizationId, table.provider, table.externalEventId),
+  index("integration_event_receipts_org_time_idx").on(table.organizationId, table.receivedAt),
+]);
+
+export const apiRateLimits = pgTable("api_rate_limits", {
+  key: text("key").primaryKey(),
+  windowStart: timestamp("window_start").notNull(),
+  count: integer("count").default(0).notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+export const emailTrackingEvents = pgTable("email_tracking_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  campaignId: uuid("campaign_id").references(() => campaigns.id).notNull(),
+  recipientHash: text("recipient_hash").notNull(),
+  eventType: text("event_type").notNull(),
+  targetHash: text("target_hash").default("").notNull(),
+  userAgentHash: text("user_agent_hash"),
+  ipHash: text("ip_hash"),
+  occurredAt: timestamp("occurred_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("email_tracking_unique_event_uidx").on(table.campaignId, table.recipientHash, table.eventType, table.targetHash),
+  index("email_tracking_campaign_idx").on(table.organizationId, table.campaignId, table.occurredAt),
+]);
+
+export const emailDeliveries = pgTable("email_deliveries", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  campaignId: uuid("campaign_id").references(() => campaigns.id).notNull(),
+  contactId: uuid("contact_id").references(() => contacts.id),
+  recipientHash: text("recipient_hash").notNull(),
+  provider: text("provider").default("resend").notNull(),
+  providerMessageId: text("provider_message_id"),
+  status: text("status").default("pending").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  attemptCount: integer("attempt_count").default(0).notNull(),
+  lastError: text("last_error"),
+  acceptedAt: timestamp("accepted_at"),
+  deliveredAt: timestamp("delivered_at"),
+  failedAt: timestamp("failed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("email_deliveries_idempotency_uidx").on(table.idempotencyKey),
+  index("email_deliveries_campaign_idx").on(table.organizationId, table.campaignId, table.createdAt),
+  index("email_deliveries_provider_message_idx").on(table.provider, table.providerMessageId),
+]);
+
+export const emailSuppressions = pgTable("email_suppressions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  recipientHash: text("recipient_hash").notNull(),
+  channel: text("channel").default("email").notNull(),
+  reason: text("reason").default("unsubscribe").notNull(),
+  source: text("source").default("recipient").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("email_suppressions_org_recipient_uidx").on(table.organizationId, table.recipientHash, table.channel),
+  index("email_suppressions_org_idx").on(table.organizationId, table.createdAt),
+]);
+
+export const contactConsents = pgTable("contact_consents", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  contactId: uuid("contact_id").references(() => contacts.id).notNull(),
+  channel: text("channel").notNull(),
+  purpose: text("purpose").notNull(),
+  status: text("status").notNull(),
+  lawfulBasis: text("lawful_basis"),
+  source: text("source"),
+  evidence: jsonb("evidence").default({}),
+  effectiveAt: timestamp("effective_at").defaultNow().notNull(),
+  expiresAt: timestamp("expires_at"),
+  recordedByUserId: uuid("recorded_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("contact_consents_contact_idx").on(table.organizationId, table.contactId),
+  index("contact_consents_lookup_idx").on(table.organizationId, table.channel, table.purpose, table.effectiveAt),
+]);
+
+export const customerSuccessPlaybooks = pgTable("customer_success_playbooks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  status: text("status").default("draft").notNull(),
+  activeVersionId: uuid("active_version_id"),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("customer_success_playbooks_org_id_uidx").on(table.organizationId, table.id),
+  index("customer_success_playbooks_org_status_idx").on(table.organizationId, table.status, table.updatedAt),
+]);
+
+export const customerSuccessPlaybookVersions = pgTable("customer_success_playbook_versions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  playbookId: uuid("playbook_id").references(() => customerSuccessPlaybooks.id).notNull(),
+  version: integer("version").notNull(),
+  definition: jsonb("definition").notNull(),
+  checksum: text("checksum").notNull(),
+  status: text("status").default("draft").notNull(),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  publishedAt: timestamp("published_at"),
+}, (table) => [
+  uniqueIndex("customer_success_playbook_versions_number_uidx").on(table.organizationId, table.playbookId, table.version),
+  uniqueIndex("customer_success_playbook_versions_checksum_uidx").on(table.organizationId, table.playbookId, table.checksum),
+]);
+
+export const customerSuccessPlans = pgTable("customer_success_plans", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  contactId: uuid("contact_id").references(() => contacts.id).notNull(),
+  name: text("name").notNull(),
+  status: text("status").default("active").notNull(),
+  playbookVersionId: uuid("playbook_version_id").references(() => customerSuccessPlaybookVersions.id),
+  ownerUserId: uuid("owner_user_id").references(() => users.id),
+  objectives: jsonb("objectives").default([]).notNull(),
+  successCriteria: jsonb("success_criteria").default([]).notNull(),
+  startDate: timestamp("start_date"),
+  targetDate: timestamp("target_date"),
+  completedAt: timestamp("completed_at"),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("customer_success_plans_org_id_uidx").on(table.organizationId, table.id),
+  index("customer_success_plans_contact_idx").on(table.organizationId, table.contactId, table.status, table.updatedAt),
+]);
+
+export const customerSuccessMilestones = pgTable("customer_success_milestones", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  planId: uuid("plan_id").references(() => customerSuccessPlans.id).notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  status: text("status").default("pending").notNull(),
+  sequence: integer("sequence").default(0).notNull(),
+  dueAt: timestamp("due_at"),
+  completedAt: timestamp("completed_at"),
+  ownerUserId: uuid("owner_user_id").references(() => users.id),
+  evidence: jsonb("evidence").default({}).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("customer_success_milestones_org_id_uidx").on(table.organizationId, table.id),
+  index("customer_success_milestones_plan_idx").on(table.organizationId, table.planId, table.sequence),
+  index("customer_success_milestones_due_idx").on(table.organizationId, table.status, table.dueAt),
+]);
+
+export const customerRenewals = pgTable("customer_renewals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  contactId: uuid("contact_id").references(() => contacts.id).notNull(),
+  subscriptionId: uuid("subscription_id").references(() => subscriptions.id),
+  renewalDate: timestamp("renewal_date").notNull(),
+  amount: decimal("amount", { precision: 15, scale: 2 }),
+  currency: text("currency").default("USD").notNull(),
+  status: text("status").default("upcoming").notNull(),
+  riskLevel: text("risk_level").default("unknown").notNull(),
+  ownerUserId: uuid("owner_user_id").references(() => users.id),
+  notes: text("notes"),
+  renewedAt: timestamp("renewed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("customer_renewals_due_idx").on(table.organizationId, table.status, table.renewalDate),
+  index("customer_renewals_contact_idx").on(table.organizationId, table.contactId, table.renewalDate),
+]);
+
+export const customerHealthAssessments = pgTable("customer_health_assessments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  contactId: uuid("contact_id").references(() => contacts.id).notNull(),
+  score: decimal("score", { precision: 5, scale: 2 }),
+  status: text("status").notNull(),
+  components: jsonb("components").default({}).notNull(),
+  methodologyVersion: text("methodology_version").notNull(),
+  evidenceFrom: timestamp("evidence_from"),
+  evidenceTo: timestamp("evidence_to").notNull(),
+  calculatedBy: text("calculated_by").default("rules_engine").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("customer_health_assessments_contact_idx").on(table.organizationId, table.contactId, table.createdAt),
+  index("customer_health_assessments_status_idx").on(table.organizationId, table.status, table.createdAt),
+]);
+
+export const customerRiskAlerts = pgTable("customer_risk_alerts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  contactId: uuid("contact_id").references(() => contacts.id).notNull(),
+  healthAssessmentId: uuid("health_assessment_id").references(() => customerHealthAssessments.id),
+  alertType: text("alert_type").notNull(),
+  severity: text("severity").notNull(),
+  status: text("status").default("open").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  evidence: jsonb("evidence").default({}).notNull(),
+  ownerUserId: uuid("owner_user_id").references(() => users.id),
+  acknowledgedAt: timestamp("acknowledged_at"),
+  resolvedAt: timestamp("resolved_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("customer_risk_alerts_assessment_type_uidx").on(table.organizationId, table.healthAssessmentId, table.alertType),
+  index("customer_risk_alerts_open_idx").on(table.organizationId, table.status, table.severity, table.createdAt),
+]);
+
+export const loyaltyPrograms = pgTable("loyalty_programs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  status: text("status").default("draft").notNull(),
+  activeVersionId: uuid("active_version_id"),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("loyalty_programs_org_id_uidx").on(table.organizationId, table.id),
+  index("loyalty_programs_org_status_idx").on(table.organizationId, table.status, table.updatedAt),
+]);
+
+export const loyaltyProgramVersions = pgTable("loyalty_program_versions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  programId: uuid("program_id").references(() => loyaltyPrograms.id).notNull(),
+  version: integer("version").notNull(),
+  definition: jsonb("definition").notNull(),
+  checksum: text("checksum").notNull(),
+  status: text("status").default("draft").notNull(),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  publishedAt: timestamp("published_at"),
+}, (table) => [
+  uniqueIndex("loyalty_program_versions_number_uidx").on(table.organizationId, table.programId, table.version),
+  uniqueIndex("loyalty_program_versions_checksum_uidx").on(table.organizationId, table.programId, table.checksum),
+  uniqueIndex("loyalty_program_versions_org_id_uidx").on(table.organizationId, table.id),
+]);
+
+export const loyaltyTiers = pgTable("loyalty_tiers", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  programVersionId: uuid("program_version_id").references(() => loyaltyProgramVersions.id).notNull(),
+  name: text("name").notNull(),
+  minimumLifetimePoints: integer("minimum_lifetime_points").default(0).notNull(),
+  benefits: jsonb("benefits").default([]).notNull(),
+  sequence: integer("sequence").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("loyalty_tiers_name_uidx").on(table.organizationId, table.programVersionId, table.name),
+  uniqueIndex("loyalty_tiers_org_id_uidx").on(table.organizationId, table.id),
+]);
+
+export const loyaltyAccounts = pgTable("loyalty_accounts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  programId: uuid("program_id").references(() => loyaltyPrograms.id).notNull(),
+  contactId: uuid("contact_id").references(() => contacts.id).notNull(),
+  currentBalance: integer("current_balance").default(0).notNull(),
+  lifetimeEarned: integer("lifetime_earned").default(0).notNull(),
+  lifetimeRedeemed: integer("lifetime_redeemed").default(0).notNull(),
+  currentTierId: uuid("current_tier_id").references(() => loyaltyTiers.id),
+  status: text("status").default("active").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("loyalty_accounts_contact_program_uidx").on(table.organizationId, table.programId, table.contactId),
+  uniqueIndex("loyalty_accounts_org_id_uidx").on(table.organizationId, table.id),
+]);
+
+export const loyaltyPointTransactions = pgTable("loyalty_point_transactions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  accountId: uuid("account_id").references(() => loyaltyAccounts.id).notNull(),
+  programVersionId: uuid("program_version_id").references(() => loyaltyProgramVersions.id).notNull(),
+  transactionType: text("transaction_type").notNull(),
+  points: integer("points").notNull(),
+  status: text("status").default("posted").notNull(),
+  sourceType: text("source_type").notNull(),
+  sourceId: text("source_id"),
+  description: text("description"),
+  idempotencyKey: text("idempotency_key").notNull(),
+  relatedTransactionId: uuid("related_transaction_id"),
+  metadata: jsonb("metadata").default({}).notNull(),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id),
+  occurredAt: timestamp("occurred_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("loyalty_point_transactions_idempotency_uidx").on(table.organizationId, table.idempotencyKey),
+  uniqueIndex("loyalty_point_transactions_org_id_uidx").on(table.organizationId, table.id),
+  index("loyalty_point_transactions_account_idx").on(table.organizationId, table.accountId, table.occurredAt),
+]);
+
+export const customerReferrals = pgTable("customer_referrals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  programId: uuid("program_id").references(() => loyaltyPrograms.id).notNull(),
+  referrerContactId: uuid("referrer_contact_id").references(() => contacts.id).notNull(),
+  referredContactId: uuid("referred_contact_id").references(() => contacts.id),
+  referralCodeHash: text("referral_code_hash").notNull(),
+  referralCodeHint: text("referral_code_hint").notNull(),
+  status: text("status").default("pending").notNull(),
+  qualificationEvent: text("qualification_event"),
+  qualifiedAt: timestamp("qualified_at"),
+  rewardedAt: timestamp("rewarded_at"),
+  rewardTransactionId: uuid("reward_transaction_id").references(() => loyaltyPointTransactions.id),
+  metadata: jsonb("metadata").default({}).notNull(),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("customer_referrals_code_uidx").on(table.organizationId, table.referralCodeHash),
+  uniqueIndex("customer_referrals_org_id_uidx").on(table.organizationId, table.id),
+  index("customer_referrals_referrer_idx").on(table.organizationId, table.programId, table.referrerContactId, table.status),
+]);
+
+export const loyaltyFraudReviews = pgTable("loyalty_fraud_reviews", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  transactionId: uuid("transaction_id").references(() => loyaltyPointTransactions.id),
+  referralId: uuid("referral_id").references(() => customerReferrals.id),
+  riskLevel: text("risk_level").notNull(),
+  status: text("status").default("open").notNull(),
+  reasonCodes: jsonb("reason_codes").default([]).notNull(),
+  evidence: jsonb("evidence").default({}).notNull(),
+  assignedUserId: uuid("assigned_user_id").references(() => users.id),
+  resolutionNotes: text("resolution_notes"),
+  resolvedAt: timestamp("resolved_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("loyalty_fraud_reviews_open_idx").on(table.organizationId, table.status, table.riskLevel, table.createdAt),
+]);
+
+export const contactIdentityKeys = pgTable("contact_identity_keys", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  contactId: uuid("contact_id").references(() => contacts.id).notNull(),
+  identityType: text("identity_type").notNull(),
+  valueHash: text("value_hash").notNull(),
+  displayHint: text("display_hint"),
+  source: text("source").default("manual").notNull(),
+  verified: boolean("verified").default(false).notNull(),
+  active: boolean("active").default(true).notNull(),
+  firstSeenAt: timestamp("first_seen_at").defaultNow().notNull(),
+  lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("contact_identity_keys_org_type_hash_uidx").on(table.organizationId, table.identityType, table.valueHash),
+  index("contact_identity_keys_contact_idx").on(table.organizationId, table.contactId, table.active),
+]);
+
+export const identityResolutionCandidates = pgTable("identity_resolution_candidates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  leftContactId: uuid("left_contact_id").references(() => contacts.id).notNull(),
+  rightContactId: uuid("right_contact_id").references(() => contacts.id).notNull(),
+  identityType: text("identity_type").notNull(),
+  identityHash: text("identity_hash").notNull(),
+  reason: text("reason").notNull(),
+  confidence: decimal("confidence", { precision: 5, scale: 2 }).notNull(),
+  status: text("status").default("pending").notNull(),
+  evidence: jsonb("evidence").default({}).notNull(),
+  reviewedByUserId: uuid("reviewed_by_user_id").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("identity_resolution_candidates_pair_uidx").on(table.organizationId, table.leftContactId, table.rightContactId, table.identityType, table.identityHash),
+  index("identity_resolution_candidates_org_status_idx").on(table.organizationId, table.status, table.createdAt),
+]);
+
+export const contactRelationships = pgTable("contact_relationships", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  fromContactId: uuid("from_contact_id").references(() => contacts.id).notNull(),
+  toContactId: uuid("to_contact_id").references(() => contacts.id).notNull(),
+  relationshipType: text("relationship_type").notNull(),
+  status: text("status").default("active").notNull(),
+  metadata: jsonb("metadata").default({}).notNull(),
+  validFrom: timestamp("valid_from"),
+  validUntil: timestamp("valid_until"),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("contact_relationships_unique_edge_uidx").on(table.organizationId, table.fromContactId, table.toContactId, table.relationshipType),
+  index("contact_relationships_from_idx").on(table.organizationId, table.fromContactId, table.status),
+  index("contact_relationships_to_idx").on(table.organizationId, table.toContactId, table.status),
+]);
+
+export const contactLifecycleHistory = pgTable("contact_lifecycle_history", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  contactId: uuid("contact_id").references(() => contacts.id).notNull(),
+  fromStage: text("from_stage"),
+  toStage: text("to_stage").notNull(),
+  reason: text("reason"),
+  source: text("source").default("manual").notNull(),
+  actorUserId: uuid("actor_user_id").references(() => users.id),
+  occurredAt: timestamp("occurred_at").defaultNow().notNull(),
+}, (table) => [index("contact_lifecycle_history_contact_idx").on(table.organizationId, table.contactId, table.occurredAt)]);
+
+export const customerTimelineEvents = pgTable("customer_timeline_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  contactId: uuid("contact_id").references(() => contacts.id).notNull(),
+  sourceType: text("source_type").notNull(),
+  sourceId: text("source_id"),
+  eventType: text("event_type").notNull(),
+  summary: text("summary").notNull(),
+  metadata: jsonb("metadata").default({}).notNull(),
+  actorUserId: uuid("actor_user_id").references(() => users.id),
+  idempotencyKey: text("idempotency_key").notNull(),
+  occurredAt: timestamp("occurred_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("customer_timeline_events_idempotency_uidx").on(table.organizationId, table.idempotencyKey),
+  index("customer_timeline_events_contact_idx").on(table.organizationId, table.contactId, table.occurredAt),
+]);
+
+export const operationalEvents = pgTable("operational_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  severity: text("severity").notNull(),
+  component: text("component").notNull(),
+  event: text("event").notNull(),
+  requestId: text("request_id"),
+  errorCode: text("error_code"),
+  message: text("message").notNull(),
+  metadata: jsonb("metadata").default({}).notNull(),
+  occurredAt: timestamp("occurred_at").defaultNow().notNull(),
+}, (table) => [
+  index("operational_events_org_time_idx").on(table.organizationId, table.occurredAt),
+  index("operational_events_org_severity_idx").on(table.organizationId, table.severity, table.occurredAt),
+  index("operational_events_component_idx").on(table.component, table.event, table.occurredAt),
+]);
+
+
+// ─── Segmentation and Personalization ─────────────────────────────────────────
+
+export const customerSegments = pgTable("customer_segments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  status: text("status").default("draft").notNull(),
+  definition: jsonb("definition").default({ combinator: "and", conditions: [] }).notNull(),
+  version: integer("version").default(1).notNull(),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("customer_segments_org_name_uidx").on(table.organizationId, table.name),
+  uniqueIndex("customer_segments_org_id_uidx").on(table.organizationId, table.id),
+]);
+
+export const customerSegmentVersions = pgTable("customer_segment_versions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  segmentId: uuid("segment_id").references(() => customerSegments.id).notNull(),
+  version: integer("version").notNull(),
+  definition: jsonb("definition").notNull(),
+  checksum: text("checksum").notNull(),
+  status: text("status").default("draft").notNull(),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  publishedAt: timestamp("published_at"),
+}, (table) => [
+  uniqueIndex("customer_segment_versions_number_uidx").on(table.organizationId, table.segmentId, table.version),
+  uniqueIndex("customer_segment_versions_checksum_uidx").on(table.organizationId, table.segmentId, table.checksum),
+  uniqueIndex("customer_segment_versions_org_id_uidx").on(table.organizationId, table.id),
+]);
+
+export const customerSegmentActiveVersions = pgTable("customer_segment_active_versions", {
+  segmentId: uuid("segment_id").primaryKey().references(() => customerSegments.id),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  versionId: uuid("version_id").references(() => customerSegmentVersions.id).notNull(),
+  activatedByUserId: uuid("activated_by_user_id").references(() => users.id),
+  activatedAt: timestamp("activated_at").defaultNow().notNull(),
+}, (table) => [uniqueIndex("customer_segment_active_versions_org_segment_uidx").on(table.organizationId, table.segmentId)]);
+
+export const personalizationExperiences = pgTable("personalization_experiences", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  key: text("key").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  channel: text("channel").notNull(),
+  segmentId: uuid("segment_id").references(() => customerSegments.id),
+  status: text("status").default("draft").notNull(),
+  definition: jsonb("definition").notNull(),
+  version: integer("version").default(1).notNull(),
+  startsAt: timestamp("starts_at"),
+  endsAt: timestamp("ends_at"),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("personalization_experiences_org_key_uidx").on(table.organizationId, table.key),
+  uniqueIndex("personalization_experiences_org_id_uidx").on(table.organizationId, table.id),
+]);
+
+export const personalizationExperienceVersions = pgTable("personalization_experience_versions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  experienceId: uuid("experience_id").references(() => personalizationExperiences.id).notNull(),
+  version: integer("version").notNull(),
+  definition: jsonb("definition").notNull(),
+  checksum: text("checksum").notNull(),
+  status: text("status").default("draft").notNull(),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  publishedAt: timestamp("published_at"),
+}, (table) => [
+  uniqueIndex("personalization_experience_versions_number_uidx").on(table.organizationId, table.experienceId, table.version),
+  uniqueIndex("personalization_experience_versions_checksum_uidx").on(table.organizationId, table.experienceId, table.checksum),
+  uniqueIndex("personalization_experience_versions_org_id_uidx").on(table.organizationId, table.id),
+]);
+
+export const personalizationActiveVersions = pgTable("personalization_active_versions", {
+  experienceId: uuid("experience_id").primaryKey().references(() => personalizationExperiences.id),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  versionId: uuid("version_id").references(() => personalizationExperienceVersions.id).notNull(),
+  activatedByUserId: uuid("activated_by_user_id").references(() => users.id),
+  activatedAt: timestamp("activated_at").defaultNow().notNull(),
+}, (table) => [uniqueIndex("personalization_active_versions_org_experience_uidx").on(table.organizationId, table.experienceId)]);
+
+export const personalizationAssignments = pgTable("personalization_assignments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  experienceId: uuid("experience_id").references(() => personalizationExperiences.id).notNull(),
+  experienceVersionId: uuid("experience_version_id").references(() => personalizationExperienceVersions.id).notNull(),
+  contactId: uuid("contact_id").references(() => contacts.id),
+  subjectKeyHash: text("subject_key_hash").notNull(),
+  variantId: text("variant_id").notNull(),
+  variantName: text("variant_name").notNull(),
+  eligible: boolean("eligible").notNull(),
+  eligibilityReason: text("eligibility_reason").notNull(),
+  payload: jsonb("payload").default({}).notNull(),
+  assignedAt: timestamp("assigned_at").defaultNow().notNull(),
+  lastEvaluatedAt: timestamp("last_evaluated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("personalization_assignments_subject_uidx").on(table.organizationId, table.experienceId, table.experienceVersionId, table.subjectKeyHash),
+  uniqueIndex("personalization_assignments_org_id_uidx").on(table.organizationId, table.id),
+  index("personalization_assignments_experience_idx").on(table.organizationId, table.experienceId, table.variantId, table.assignedAt),
+]);
+
+// ─── Release validation evidence ─────────────────────────────────────────────
+
+export const releaseValidationEvents = pgTable("release_validation_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id).notNull(),
+  controlKey: text("control_key").notNull(),
+  action: text("action").notNull(),
+  result: text("result"),
+  environment: text("environment").notNull(),
+  summary: text("summary").notNull(),
+  evidenceReference: text("evidence_reference"),
+  evidence: jsonb("evidence").default({}).notNull(),
+  targetEventId: uuid("target_event_id"),
+  idempotencyKey: text("idempotency_key").notNull(),
+  expiresAt: timestamp("expires_at"),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id),
+  occurredAt: timestamp("occurred_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("release_validation_events_org_id_uidx").on(table.organizationId, table.id),
+  uniqueIndex("release_validation_events_org_idempotency_uidx").on(table.organizationId, table.idempotencyKey),
+  index("release_validation_events_control_idx").on(table.organizationId, table.controlKey, table.occurredAt),
+]);
 
 // ─── Relations ────────────────────────────────────────────────────────────────
 

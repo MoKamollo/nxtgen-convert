@@ -1,48 +1,53 @@
-import { randomBytes, randomUUID } from "crypto";
+import { and, eq, isNull } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { organizations } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { apiKeys } from "@/db/schema";
+import { withApiGuard } from "@/lib/api-guard";
+import { generateApiKey } from "@/lib/api-keys";
+import { normalizeApiKeyScopes } from "@/lib/api-key-scopes";
 
-type ApiKeyRecord = { id: string; key: string; name: string; createdAt: string; lastUsed: string | null };
-type OrgSettings = { apiKeys?: ApiKeyRecord[]; [key: string]: unknown };
-
-async function getSettings(orgId: string): Promise<OrgSettings | null> {
-  const [org] = await db.select({ settings: organizations.settings }).from(organizations).where(eq(organizations.id, orgId)).limit(1);
-  return org ? ((org.settings ?? {}) as OrgSettings) : null;
+async function GETHandler(request: NextRequest) {
+  const orgId = request.headers.get("x-tenant-id")!;
+  const data = await db.select({
+    id: apiKeys.id,
+    name: apiKeys.name,
+    prefix: apiKeys.prefix,
+    maskedKey: apiKeys.prefix,
+    scopes: apiKeys.scopes,
+    lastUsedAt: apiKeys.lastUsedAt,
+    expiresAt: apiKeys.expiresAt,
+    createdAt: apiKeys.createdAt,
+  }).from(apiKeys).where(and(eq(apiKeys.organizationId, orgId), isNull(apiKeys.revokedAt)));
+  return NextResponse.json({ data });
 }
 
-export async function GET(request: NextRequest) {
-  const orgId = request.headers.get("x-tenant-id");
-  if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  try {
-    const settings = await getSettings(orgId);
-    if (!settings) return NextResponse.json({ error: "Organization not found" }, { status: 404 });
-    const data = (settings.apiKeys ?? []).map(({ key, ...record }) => ({ ...record, maskedKey: `nxg_••••••••${key.slice(-8)}` }));
-    return NextResponse.json({ data });
-  } catch {
-    return NextResponse.json({ error: "Failed to fetch API keys" }, { status: 500 });
+async function POSTHandler(request: NextRequest) {
+  const orgId = request.headers.get("x-tenant-id")!;
+  const userId = request.headers.get("x-user-id")!;
+  const body = await request.json() as Record<string, unknown>;
+  const name = String(body.name ?? "Default").trim().slice(0, 80) || "Default";
+  const scopes = normalizeApiKeyScopes(body.scopes);
+  if (scopes.length === 0) return NextResponse.json({ error: "At least one valid scope is required" }, { status: 400 });
+  const rawExpiresAt = body.expiresAt;
+  const expiresAt = rawExpiresAt === undefined || rawExpiresAt === null || rawExpiresAt === ""
+    ? null
+    : new Date(String(rawExpiresAt));
+  if (expiresAt && (!Number.isFinite(expiresAt.getTime()) || expiresAt <= new Date())) {
+    return NextResponse.json({ error: "Expiration must be a future date" }, { status: 400 });
   }
+  const generated = generateApiKey();
+  const [record] = await db.insert(apiKeys).values({
+    organizationId: orgId,
+    createdByUserId: userId,
+    name,
+    prefix: generated.prefix,
+    keyHash: generated.keyHash,
+    scopes,
+    expiresAt,
+  }).returning({ id: apiKeys.id, name: apiKeys.name, prefix: apiKeys.prefix, scopes: apiKeys.scopes, expiresAt: apiKeys.expiresAt, createdAt: apiKeys.createdAt });
+  if (!record) throw new Error("API key could not be stored");
+  return NextResponse.json({ data: { ...record, key: generated.rawKey, warning: "Copy this key now. It cannot be displayed again." } }, { status: 201 });
 }
 
-export async function POST(request: NextRequest) {
-  const orgId = request.headers.get("x-tenant-id");
-  if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  try {
-    const body = await request.json();
-    const name = String(body.name ?? "Default").trim().slice(0, 80) || "Default";
-    const settings = await getSettings(orgId);
-    if (!settings) return NextResponse.json({ error: "Organization not found" }, { status: 404 });
-    const record: ApiKeyRecord = {
-      id: randomUUID(),
-      key: `nxg_${randomBytes(32).toString("hex")}`,
-      name,
-      createdAt: new Date().toISOString(),
-      lastUsed: null,
-    };
-    await db.update(organizations).set({ settings: { ...settings, apiKeys: [...(settings.apiKeys ?? []), record] }, updatedAt: new Date() }).where(eq(organizations.id, orgId));
-    return NextResponse.json({ data: { ...record, key: record.key } }, { status: 201 });
-  } catch {
-    return NextResponse.json({ error: "Failed to generate API key" }, { status: 500 });
-  }
-}
+export const GET = withApiGuard(GETHandler);
+export const POST = withApiGuard(POSTHandler);

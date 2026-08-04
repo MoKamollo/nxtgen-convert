@@ -14,8 +14,8 @@ import {
   StatusBadge,
   Toast,
 } from "@/components/modules/ModulePrimitives";
-import { apiUrl } from "@/lib/org";
-import { Frown, Meh, Plus, Send, Smile, Star } from "lucide-react";
+import { apiFetch, apiUrl } from "@/lib/org";
+import { Frown, Meh, Send, Smile, Star } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Line,
@@ -69,9 +69,9 @@ export default function NpsPage() {
     setLoading(true);
     try {
       const [a, b, c] = await Promise.all([
-        fetch(apiUrl("/api/nps")).then((r) => r.json()),
-        fetch(apiUrl("/api/nps/stats")).then((r) => r.json()),
-        fetch(apiUrl("/api/contacts", { limit: "200" })).then((r) => r.json()),
+        apiFetch(apiUrl("/api/nps")).then((r) => r.json()),
+        apiFetch(apiUrl("/api/nps/stats")).then((r) => r.json()),
+        apiFetch(apiUrl("/api/contacts", { limit: "200" })).then((r) => r.json()),
       ]);
       setResponses(a.data?.responses ?? []);
       setStats(b.data);
@@ -83,7 +83,7 @@ export default function NpsPage() {
     }
   }, []);
   useEffect(() => {
-    load();
+    void Promise.resolve().then(load);
   }, [load]);
   const category = (s: number) =>
     s >= 9 ? "promoter" : s >= 7 ? "passive" : "detractor";
@@ -107,7 +107,7 @@ export default function NpsPage() {
     setSending(true);
     let success = 0;
     for (const contact of selected) {
-      const r = await fetch(apiUrl("/api/nps/send"), {
+      const r = await apiFetch(apiUrl("/api/nps/send"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ contactId: contact.id }),

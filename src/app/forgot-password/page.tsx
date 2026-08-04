@@ -1,4 +1,7 @@
 "use client";
+import Image from "next/image";
+import Link from "next/link";
+import { apiFetch } from "@/lib/org";
 import { AlertCircle, ArrowLeft, CheckCircle2, Mail } from "lucide-react";
 import { useState } from "react";
 export default function ForgotPassword() {
@@ -11,7 +14,7 @@ export default function ForgotPassword() {
     setLoading(true);
     setError("");
     try {
-      const r = await fetch("/api/auth/forgot-password", {
+      const r = await apiFetch("/api/auth/forgot-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
@@ -37,11 +40,11 @@ export default function ForgotPassword() {
     >
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center gap-2">
-          <a href="/">
-            <img src="/nxg-logo-dark.svg" alt="NxtGen" className="h-8" />
-          </a>
+          <Link href="/">
+            <Image src="/nxg-logo-dark.svg" alt="NxtGen" width={160} height={32} className="h-8 w-auto" priority />
+          </Link>
           <span className="text-sm font-semibold tracking-widest text-violet-400 uppercase">
-            Convergence
+            Convert
           </span>
         </div>
         <div className="rounded-2xl border border-[#162440] bg-[#080F1E]/90 p-8 backdrop-blur-sm">
@@ -95,13 +98,13 @@ export default function ForgotPassword() {
               </button>
             </form>
           )}
-          <a
+          <Link
             href="/login"
             className="mt-5 flex items-center justify-center gap-1 text-xs text-[#64748b] hover:text-white"
           >
             <ArrowLeft size={12} />
             Back to sign in
-          </a>
+          </Link>
         </div>
       </div>
     </div>

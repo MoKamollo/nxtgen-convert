@@ -1,10 +1,12 @@
+import { withApiGuard } from "@/lib/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { deals, contacts } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { triggerAutomation } from "@/lib/automation";
+import { enqueueWebhookEvent } from "@/lib/webhooks";
 
-export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function PATCHHandler(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const orgId = request.headers.get("x-tenant-id");
   if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
@@ -47,13 +49,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   }
 
   if (body.stage) {
-    await triggerAutomation(orgId, "deal.stage_changed", { dealId: id, contactId });
+    await triggerAutomation(orgId, "deal.stage_changed", { dealId: id, contactId, idempotencyKey: request.headers.get("x-request-id") ?? `deal.stage:${id}:${body.stage}:${Date.now()}`, context: { stage: body.stage } });
+    const eventType = body.stage === "closed_won" ? "deal.won" : body.stage === "closed_lost" ? "deal.lost" : "deal.stage_changed";
+    await enqueueWebhookEvent(orgId, eventType, { dealId: id, contactId, stage: body.stage, occurredAt: new Date().toISOString() });
   }
 
   return NextResponse.json({ ok: true });
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function DELETEHandler(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const orgId = request.headers.get("x-tenant-id");
   if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
@@ -61,3 +65,6 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   await db.delete(deals).where(and(eq(deals.id, id), eq(deals.organizationId, orgId)));
   return NextResponse.json({ ok: true });
 }
+
+export const PATCH = withApiGuard(PATCHHandler);
+export const DELETE = withApiGuard(DELETEHandler);

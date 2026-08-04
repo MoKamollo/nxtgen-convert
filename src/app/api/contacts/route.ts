@@ -1,12 +1,16 @@
+import { withApiGuard } from "@/lib/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { contacts, companies, users, deals, contactStatusEnum } from "@/db/schema";
-import { eq, sql, and, ilike, or } from "drizzle-orm";
+import { contacts, companies, users, deals, contactStatusEnum, contactLifecycleHistory } from "@/db/schema";
+import { eq, sql, and, ilike, or, isNull } from "drizzle-orm";
 import { triggerAutomation } from "@/lib/automation";
+import { enqueueWebhookEvent } from "@/lib/webhooks";
+import { findIdentityOwner, normalizeIdentity, syncContactIdentity } from "@/lib/identity-resolution";
+import { recordCustomerTimelineEvent } from "@/lib/customer-timeline";
 
 const VALID_STATUSES = contactStatusEnum.enumValues;
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   try {
     const orgId = request.headers.get("x-tenant-id");
     if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
@@ -38,7 +42,7 @@ export async function GET(request: NextRequest) {
     const pageSize    = Math.min(200, Math.max(1, parseInt(request.nextUrl.searchParams.get("limit") ?? "100", 10)));
     const offset      = (page - 1) * pageSize;
 
-    const conditions = [eq(contacts.organizationId, orgId)];
+    const conditions = [eq(contacts.organizationId, orgId), isNull(contacts.archivedAt)];
     if (statusParam && statusParam !== "all") {
       if (VALID_STATUSES.includes(statusParam as typeof VALID_STATUSES[number])) {
         conditions.push(eq(contacts.status, statusParam as typeof VALID_STATUSES[number]));
@@ -109,7 +113,7 @@ function calcScore(data: { email?: string; phone?: string; jobTitle?: string; so
   return Math.min(score, 100);
 }
 
-export async function POST(request: NextRequest) {
+async function POSTHandler(request: NextRequest) {
   try {
     const orgId = request.headers.get("x-tenant-id");
     if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
@@ -120,23 +124,56 @@ export async function POST(request: NextRequest) {
     if (body.lastName && body.lastName.length > 100) return NextResponse.json({ error: "lastName too long (max 100 chars)" }, { status: 400 });
     if (body.status && !VALID_STATUSES.includes(body.status)) return NextResponse.json({ error: `Invalid status. Valid: ${VALID_STATUSES.join(", ")}` }, { status: 400 });
 
-    const score = calcScore({ email: body.email, phone: body.phone, jobTitle: body.jobTitle, source: body.source, status: body.status });
+    const normalizedEmail = body.email ? normalizeIdentity("email", String(body.email)) : null;
+    if (normalizedEmail) {
+      const identityOwner = await findIdentityOwner(orgId, "email", normalizedEmail);
+      const [directMatch] = await db.select({ id: contacts.id }).from(contacts).where(and(
+        eq(contacts.organizationId, orgId),
+        isNull(contacts.archivedAt),
+        sql`lower(trim(${contacts.email})) = ${normalizedEmail}`,
+      )).limit(1);
+      if (identityOwner.contactId || directMatch) {
+        return NextResponse.json({ error: "A contact with this email already exists", contactId: identityOwner.contactId ?? directMatch?.id }, { status: 409 });
+      }
+    }
+    if (body.phone) normalizeIdentity("phone", String(body.phone));
+
+    const score = calcScore({ email: normalizedEmail ?? undefined, phone: body.phone, jobTitle: body.jobTitle, source: body.source, status: body.status });
     const [contact] = await db.insert(contacts).values({
       organizationId: orgId,
       firstName: body.firstName.trim().slice(0, 100),
       lastName: body.lastName?.trim().slice(0, 100),
-      email: body.email,
-      phone: body.phone,
+      email: normalizedEmail,
+      phone: body.phone ? normalizeIdentity("phone", String(body.phone)) : null,
       status: body.status || "lead",
+      jobTitle: body.jobTitle?.trim().slice(0, 200) ?? null,
       source: body.source,
       tags: body.tags || [],
       customFields: body.customFields || {},
       score,
     }).returning();
-    await triggerAutomation(orgId, "contact.created", { contactId: contact.id });
+    await syncContactIdentity({ organizationId: orgId, contactId: contact.id, type: "email", rawValue: contact.email, source: "contact_create" });
+    await syncContactIdentity({ organizationId: orgId, contactId: contact.id, type: "phone", rawValue: contact.phone, source: "contact_create" });
+    await db.insert(contactLifecycleHistory).values({
+      organizationId: orgId, contactId: contact.id, fromStage: null, toStage: contact.status ?? "lead",
+      source: "contact_create", actorUserId: request.headers.get("x-user-id"),
+    });
+    await recordCustomerTimelineEvent({
+      organizationId: orgId, contactId: contact.id, sourceType: "contact", sourceId: contact.id,
+      eventType: "contact.created", summary: "Contact created", actorUserId: request.headers.get("x-user-id"),
+      idempotencyKey: `contact.created:${contact.id}`, metadata: { source: contact.source, status: contact.status },
+    });
+    await triggerAutomation(orgId, "contact.created", { contactId: contact.id, idempotencyKey: `contact.created:${contact.id}` });
+    await enqueueWebhookEvent(orgId, "contact.created", { contactId: contact.id, occurredAt: new Date().toISOString() });
     return NextResponse.json({ data: contact }, { status: 201 });
   } catch (error) {
     console.error("[contacts POST]", error);
+    if (error instanceof Error && error.message.includes("IDENTITY_HASHING_SECRET")) {
+      return NextResponse.json({ error: "Identity resolution is not configured" }, { status: 503 });
+    }
     return NextResponse.json({ error: "Failed to create contact" }, { status: 500 });
   }
 }
+
+export const GET = withApiGuard(GETHandler);
+export const POST = withApiGuard(POSTHandler);

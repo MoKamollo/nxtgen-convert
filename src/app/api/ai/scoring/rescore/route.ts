@@ -1,10 +1,11 @@
+import { withApiGuard } from "@/lib/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { contacts, organizations } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { normalizeScoringModel, scoreContact } from "@/lib/scoring";
 
-export async function POST(request: NextRequest) {
+async function POSTHandler(request: NextRequest) {
   const orgId = request.headers.get("x-tenant-id");
   if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   try {
@@ -36,3 +37,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Failed to re-score contacts" }, { status: 500 });
   }
 }
+
+export const POST = withApiGuard(POSTHandler);

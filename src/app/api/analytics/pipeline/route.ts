@@ -1,3 +1,4 @@
+import { withApiGuard } from "@/lib/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { companies, contacts, deals, users } from "@/db/schema";
@@ -5,7 +6,7 @@ import { and, desc, eq } from "drizzle-orm";
 
 const OPEN = ["prospecting", "qualification", "proposal", "negotiation"];
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   const orgId = request.headers.get("x-tenant-id");
   if (!orgId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   try {
@@ -35,3 +36,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Failed to fetch pipeline analytics" }, { status: 500 });
   }
 }
+
+export const GET = withApiGuard(GETHandler);
