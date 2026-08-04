@@ -37,6 +37,7 @@ import {
   Gift,
   SlidersHorizontal,
   ShieldCheck,
+  Terminal,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useSession } from "@/hooks/useSession";
@@ -296,6 +297,16 @@ export function Sidebar({ collapsed }: SidebarProps) {
             </button>
             {userMenuOpen && (
               <div className="absolute bottom-full left-3 right-3 mb-1 rounded-lg border border-surface-700 bg-surface-900 shadow-xl overflow-hidden">
+                <a
+                  href="https://command.nxtgen-stack.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-surface-400 hover:text-surface-200 hover:bg-surface-800/60 transition-colors"
+                >
+                  <Terminal size={13} />
+                  Command Center
+                </a>
+                <div className="border-t border-surface-800" />
                 <button
                   onClick={handleLogout}
                   className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
