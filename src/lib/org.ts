@@ -25,7 +25,10 @@ export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {})
   }
   const response = await globalThis.fetch(input, { ...init, headers });
   if (response.status === 401 && typeof window !== "undefined") {
-    window.location.href = "/login";
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+    if (!url.includes("/api/auth/")) {
+      window.location.href = "/login";
+    }
   }
   return response;
 }

@@ -40,7 +40,7 @@ export default function ForgotPassword() {
     >
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center gap-2">
-          <a href="https://nxtgen-stack.com" style={{ width: 158, height: 32, overflow: "hidden", display: "block" }}>
+          <a href="https://nxtgen-stack.com/convert/" style={{ width: 158, height: 32, overflow: "hidden", display: "block" }}>
             <Image src="/nxg-logo-dark.svg" alt="NxtGen" width={160} height={32} className="h-8 w-auto" priority />
           </a>
           <span className="text-sm font-semibold tracking-widest text-violet-400 uppercase">
