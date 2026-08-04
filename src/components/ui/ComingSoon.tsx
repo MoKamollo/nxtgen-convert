@@ -16,7 +16,7 @@ export function ComingSoon({ feature, description }: ComingSoonProps) {
         </div>
         <h1 className="text-2xl font-bold text-surface-50 mb-2">{feature}</h1>
         <p className="text-sm text-surface-400 max-w-sm">
-          {description ?? "This feature is coming soon. We're building it as part of the NxtGen Convert roadmap."}
+          {description ?? "This feature is coming soon. We're building it as part of the NxtGen Convergence roadmap."}
         </p>
         <div className="mt-6 inline-flex items-center gap-2 rounded-lg bg-brand-500/10 border border-brand-500/20 px-4 py-2">
           <span className="h-1.5 w-1.5 rounded-full bg-brand-400 animate-pulse" />

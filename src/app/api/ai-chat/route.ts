@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
   // Pull Brain knowledge base (cached 5 min) — runs in parallel with CRM queries above
   const brainContext = await fetchBrainContext(8000);
 
-  const systemPrompt = `You are the NxtGen Convert AI Revenue Assistant — a sharp, direct revenue intelligence advisor embedded inside a B2B SaaS CRM dashboard. You have real-time access to this organisation's live data.
+  const systemPrompt = `You are the NxtGen Convergence AI Revenue Assistant — a sharp, direct revenue intelligence advisor embedded inside a B2B SaaS CRM dashboard. You have real-time access to this organisation's live data.
 ${brainContext ? `\nBRAIN KNOWLEDGE BASE (NxtGen product context & business rules):\n${brainContext}\n` : ""}
 LIVE CRM SNAPSHOT (as of right now):
 - Contacts: ${totalContacts} total | ${leads} leads | ${customers} customers | ${churned} churned | ${hotLeads} hot leads (score ≥70, not yet contacted)

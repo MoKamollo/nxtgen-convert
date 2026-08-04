@@ -97,14 +97,14 @@ export async function POST(request: NextRequest) {
              </p>`;
 
         await resend.emails.send({
-          from: process.env.EMAIL_FROM ?? "NxtGen Convert <noreply@nxtgen-stack.com>",
+          from: process.env.EMAIL_FROM ?? "NxtGen Convergence <noreply@nxtgen-stack.com>",
           to: normalizedEmail,
-          subject: `You've been invited to ${org?.name ?? "NxtGen Convert"}`,
+          subject: `You've been invited to ${org?.name ?? "NxtGen Convergence"}`,
           html: `
             <div style="font-family:Inter,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;background:#0a0f1e;color:#e2e8f0;border-radius:12px">
               <h2 style="font-size:20px;font-weight:700;margin-bottom:8px">You're invited!</h2>
               <p style="color:#94a3b8;font-size:14px;margin-bottom:24px">
-                You've been added to <strong style="color:#e2e8f0">${org?.name ?? "NxtGen Convert"}</strong> as a
+                You've been added to <strong style="color:#e2e8f0">${org?.name ?? "NxtGen Convergence"}</strong> as a
                 <strong style="color:#e2e8f0">${role}</strong>.
               </p>
               <a href="${loginUrl}"

@@ -148,7 +148,7 @@ export default function SignUpPage() {
           <a href="https://nxtgen-stack.com/convert/" style={{ width: 158, height: 32, overflow: "hidden", display: "block" }}>
             <img src="/nxg-logo-dark.svg" alt="NxtGen" style={{ height: 32, width: "auto" }} />
           </a>
-          <span className="text-sm font-semibold tracking-widest text-violet-400 uppercase">Convert</span>
+          <span className="text-sm font-semibold tracking-widest text-violet-400 uppercase">Convergence</span>
         </div>
         <Suspense>
           <SignUpForm />

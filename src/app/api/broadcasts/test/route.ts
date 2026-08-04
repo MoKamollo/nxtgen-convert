@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const resend = new Resend(process.env.RESEND_API_KEY);
     const result = await resend.emails.send({
-      from: process.env.EMAIL_FROM ?? "NxtGen Convert <noreply@nxtgen-stack.com>",
+      from: process.env.EMAIL_FROM ?? "NxtGen Convergence <noreply@nxtgen-stack.com>",
       to: user.email,
       subject: `[Test] ${String(body.subject ?? "Broadcast")}`,
       html: String(body.content ?? "<p>Test broadcast</p>").replace(/\{\{first_name\}\}/gi, user.name.split(" ")[0]),

@@ -41,7 +41,7 @@ export default function ForgotPassword() {
             <img src="/nxg-logo-dark.svg" alt="NxtGen" className="h-8" />
           </a>
           <span className="text-sm font-semibold tracking-widest text-violet-400 uppercase">
-            Convert
+            Convergence
           </span>
         </div>
         <div className="rounded-2xl border border-[#162440] bg-[#080F1E]/90 p-8 backdrop-blur-sm">

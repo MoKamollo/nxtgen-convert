@@ -37,7 +37,7 @@ async function executeStep(
         const { Resend } = await import("resend");
         const resend = new Resend(process.env.RESEND_API_KEY);
         await resend.emails.send({
-          from: process.env.EMAIL_FROM ?? "NxtGen Convert <noreply@nxtgen-stack.com>",
+          from: process.env.EMAIL_FROM ?? "NxtGen Convergence <noreply@nxtgen-stack.com>",
           to: contact.email,
           subject: (step.config.subject as string) ?? wfName,
           html: `<!DOCTYPE html><html><body style="margin:0;background:#0a0f1e">

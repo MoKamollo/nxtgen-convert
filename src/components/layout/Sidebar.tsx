@@ -224,9 +224,9 @@ export function Sidebar({ collapsed }: SidebarProps) {
             </div>
           ) : (
             <>
-              <img src="/nxtgen-logo.png" alt="NxtGen Convert" style={{ height: 28, width: "auto", flexShrink: 0 }} />
+              <img src="/nxtgen-logo.png" alt="NxtGen Convergence" style={{ height: 28, width: "auto", flexShrink: 0 }} />
               <span className="text-xs font-semibold tracking-widest text-brand-400 uppercase ml-1">
-                Convert
+                Convergence
               </span>
             </>
           )}
