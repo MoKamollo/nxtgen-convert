@@ -1,5 +1,5 @@
 {
-  "buildCommand": "node scripts/ensure-runtime-tables.mjs && next build",
+  "buildCommand": "node scripts/apply-migrations.mjs --apply && next build",
   "crons": [
     {
       "path": "/api/cron/automation",
