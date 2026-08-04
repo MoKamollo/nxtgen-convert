@@ -49,7 +49,7 @@ export default function NpsSurveyPage() {
   const feedbackLabel = score === null
     ? "Any additional comments? (optional)"
     : score >= 9
-      ? "What do you love most about NxtGen Convert?"
+      ? "What do you love most about NxtGen Convergence?"
       : score <= 6
         ? "What could we do better?"
         : "What would make us a 10 for you?";

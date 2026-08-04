@@ -243,20 +243,20 @@ export function Sidebar({ collapsed }: SidebarProps) {
     >
       {/* Logo */}
       <div className="flex h-14 shrink-0 items-center border-b border-surface-800 px-4">
-        <Link href="/" className="flex items-center gap-2">
+        <a href="https://nxtgen-stack.com/convert/" className="flex items-center gap-2">
           {collapsed ? (
             <div style={{ width: 28, height: 28, borderRadius: 6, background: "linear-gradient(135deg,#6366f1,#3b9eff)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
               <span style={{ color: "#fff", fontWeight: 800, fontSize: 13, fontFamily: "sans-serif" }}>N</span>
             </div>
           ) : (
             <>
-              <Image src="/nxtgen-logo.png" alt="NxtGen Convert" width={140} height={28} className="h-7 w-auto shrink-0" priority />
+              <Image src="/nxtgen-logo.png" alt="NxtGen Convergence" width={140} height={28} className="h-7 w-auto shrink-0" priority />
               <span className="text-xs font-semibold tracking-widest text-brand-400 uppercase ml-1">
-                Convert
+                Convergence
               </span>
             </>
           )}
-        </Link>
+        </a>
       </div>
 
       {/* Navigation */}

@@ -65,7 +65,7 @@ async function POSTHandler(request: NextRequest) {
     await sendInvitationEmail(email, `Invitation to ${org.name}`, `
       <div style="font-family:Inter,Arial,sans-serif;max-width:520px;margin:auto;padding:32px;background:#080f1e;color:#f8fafc;border-radius:12px">
         <h1 style="font-size:22px;margin:0 0 12px">Join ${org.name}</h1>
-        <p style="color:#94a3b8;line-height:1.6">You have been invited to NxtGen Convert as <strong>${role}</strong>. Sign in or create your NxtGen account, then accept the invitation.</p>
+        <p style="color:#94a3b8;line-height:1.6">You have been invited to NxtGen Convergence as <strong>${role}</strong>. Sign in or create your NxtGen account, then accept the invitation.</p>
         <a href="${acceptUrl}" style="display:inline-block;margin-top:18px;padding:11px 18px;border-radius:8px;background:#7B6EF6;color:white;text-decoration:none;font-weight:600">Accept invitation</a>
         <p style="color:#64748b;font-size:12px;margin-top:24px">This secure link expires in 72 hours and can be used once.</p>
       </div>`);

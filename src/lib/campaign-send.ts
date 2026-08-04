@@ -222,7 +222,7 @@ export async function sendCampaign(orgId: string, campaignId: string) {
     const resend = new Resend(resendKey);
     const from = campaign.fromEmail && campaign.fromName
       ? `${campaign.fromName} <${campaign.fromEmail}>`
-      : process.env.EMAIL_FROM ?? "NxtGen Convert <noreply@nxtgen-stack.com>";
+      : process.env.EMAIL_FROM ?? "NxtGen Convergence <noreply@nxtgen-stack.com>";
     const batchSize = 10;
 
     for (let index = 0; index < recipients.length; index += batchSize) {

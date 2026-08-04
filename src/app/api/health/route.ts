@@ -7,7 +7,7 @@ export async function GET() {
     await db.execute(sql`SELECT 1`);
     return NextResponse.json({
       status: "ok",
-      service: "NxtGen Convert",
+      service: "NxtGen Convergence",
       version: "1.0.0",
       timestamp: new Date().toISOString(),
       database: "connected",
@@ -16,7 +16,7 @@ export async function GET() {
     return NextResponse.json(
       {
         status: "error",
-        service: "NxtGen Convert",
+        service: "NxtGen Convergence",
         database: "disconnected",
         error: error instanceof Error ? error.message : "Unknown error",
       },

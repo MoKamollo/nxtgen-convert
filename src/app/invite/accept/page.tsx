@@ -8,7 +8,7 @@ function InvitationCard({ message }: { message: string }) {
   return (
     <main className="grid min-h-screen place-items-center bg-[#04080F] p-6 text-[#F8FAFC]">
       <section className="w-full max-w-md rounded-xl border border-white/10 bg-[#080F1E] p-6">
-        <h1 className="text-xl font-bold">NxtGen Convert invitation</h1>
+        <h1 className="text-xl font-bold">NxtGen Convergence invitation</h1>
         <p className="mt-3 text-sm text-[#94A3B8]">{message}</p>
       </section>
     </main>
